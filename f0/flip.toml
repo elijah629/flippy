@@ -1,0 +1,9 @@
+name = "f0"
+firmware = "unleashed@release"
+
+[repositories.flipper]
+url = "https://github.com/UberGuidoZ/Flipper"
+uuid = "6c84eece-e1e4-576f-a4d1-06ef11c5a6cd"
+
+[[repositories.flipper.mappings]]
+BadUSB = "BadUSB/**/*.txt"
