@@ -1,6 +1,6 @@
 [package]
 name = "flippy"
-version = "0.1.0"
+version = "0.2.0"
 rust-version = "1.86.0"
 edition = "2024"
 
@@ -15,7 +15,7 @@ clap = { version = "4.5.39", features = ["derive"] }
 cliclack = { version = "0.3.6", default-features = false }
 
 # Flipper
-flipper-rpc = { version = "0.6.2", features = ["fs-all", "tracing", "transport-serial-optimized"] }
+flipper-rpc = { version = "0.6.2", features = ["fs-all", "tracing", "transport-serial-optimized", "transport-serial-optimized-large-stack-limit"] }
 
 # Git (gix)
 gix = { version = "0.72.1", features = [
@@ -25,8 +25,18 @@ gix = { version = "0.72.1", features = [
   #"worktree-mutation",
   "blocking-http-transport-curl-rustls",
   ], default-features = false }
-## See below
-prodash = { version = "29.0.2", default-features = false, features = ["progress-tree", "local-time", "unit-human", "unit-bytes", "unit-duration", "render-line", "render-line-crossterm", "render-line-autoconfigure"] }
+
+## See [patch.crates-io] below
+prodash = { version = "29.0.2", default-features = false, features = [
+  "progress-tree",
+  "local-time",
+  "unit-human",
+  "unit-bytes",
+  "unit-duration",
+  "render-line",
+  "render-line-crossterm",
+  "render-line-autoconfigure"
+]}
 
 # Projects
 serde = { version = "1.0.219", features = ["derive"] }
@@ -49,7 +59,7 @@ jiff = "0.2.15"
 # Calculate MD5 hashes for trees
 md5 = "0.7.0"
 
-# Fast hasher for creating trees
+# Diff trees
 fxhash = "0.2.1"
 hyperloglockless = "0.1.0"
 

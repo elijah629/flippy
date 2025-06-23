@@ -1,328 +1,409 @@
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-    time::Instant,
+use crate::{
+    commands::upload::{diff::diff_all_repositories, flipper::pick_cli},
+    types::remote_sync_file::SYNC_FILE_PATH,
 };
-
-use anyhow::bail;
+use crate::{
+    types::{flip::Flip, remote_sync_file::SyncFile},
+    walking_diff::diff::Op,
+};
+use anyhow::{Result, bail};
+use cliclack::confirm;
 use flipper_rpc::{
     fs::{FsRead, FsWrite},
-    transport::serial::{list_flipper_ports, rpc::SerialRpcTransport},
+    transport::serial::rpc::SerialRpcTransport,
 };
-use gix::{
-    ObjectId,
-    bstr::ByteSlice,
-    diff::{Options, index::Action},
-    index::State,
-    objs::find::Never,
-    open,
-    pathspec::Search,
-};
-use tokio::fs;
-use tracing::info;
+use gix::{Commit, open};
+use std::path::{Path, PathBuf};
+use tracing::{info, warn};
 
-use crate::{
-    types::{
-        flip::Flip,
-        mapping::{Mapping, MappingInfo},
-    },
-    walking_diff::{
-        self,
-        diff::Op,
-        tree::{RemoteNode, RemoteTree},
-    },
-};
+mod diff;
+mod flipper;
+mod pathspec;
 
-pub async fn run(flip: Flip) -> anyhow::Result<()> {
-    let ports = list_flipper_ports()?;
+pub async fn run(flip: Flip) -> Result<()> {
+    let mut cli = pick_cli()?;
 
-    /*let port = if ports.len() > 1 {
-        let items: Vec<&str> = ports.iter().map(|x| x.device_name.as_str()).collect();
-        let selection = select("Which device is the target Flipper Zero?")
-            .items(&items)
-            .interact()?;
+    // TODO: Implement SD card writing. Option to take out the SD card and write to it directly (if the host has a SD reader), instead of sending files through RPC. this will improve speed greatly for those who can
 
-        &ports[selection].port_name // .0 is the port_name
-    } else {
-        &ports[0].port_name
-    };*/
+    let sync_file = cli
+        .fs_read(SYNC_FILE_PATH)
+        .map_err(Into::into)
+        .and_then(SyncFile::deserialize);
 
-    let port = &ports[0].port_name;
+    let mut operations: Vec<Op> = vec![];
+    let mut updated_sync_file = SyncFile {
+        repositories: Vec::with_capacity(flip.repositories.len()),
+    };
 
-    let mut cli = SerialRpcTransport::new(port)?;
-
-    //info!("Selected flipper on port {}", port);
-
-    // TODO: Implement a walking diff algorithim, Needs to list every file already on the flipper
-    // with its MD5 hash (use flipper_rpc) then, after comparing with the files we need to send and
-    // their MD5 hashes (should make a hashfile to store them, although inexpensive these can stack
-    // up quick). Then only copy the files that have been updated.
-    //
-    // TODO: (Cont...) Copy all files that dont exist. And create folders that don't exist.
-    // ( negative diffed from SRC -> Flipper )
-    //
-    // TODO: Implement SD card writing. Option to use the SD card directly instead of sending files
-    // over RPC for more speed.
-    let path = flip.source_path;
-
-    for (name, repo) in flip.repositories.iter() {
-        let url = gix::url::parse(repo.url.as_str().into())?;
-        let path = path.join("store").join(repo.uuid.to_string());
-
-        if !fs::try_exists(&path).await? {
-            bail!(
-                "repository `{name}` at `{url}` does not exist but is in store\n\t\tplease run `flippy store fetch` to download all repositories"
-            );
+    match sync_file {
+        Ok(sync_file) => {
+            // Yes! The syncfile exists already. We must check if each REPO exists inside of it,
+            // but we have *some* data.
+            //
+            // Rebuild the syncfile after every iteration, then write it at the end
+            diff_all_repositories(
+                &flip,
+                &mut cli,
+                &mut operations,
+                sync_file,
+                &mut updated_sync_file,
+            )
+            .await?;
         }
-
-        let mappings = &repo.mappings;
-
-        let repo = open(&path)?;
-
-        /*
-        // Retrieve the specified commit
-        let commit = repo.find_commit(ObjectId::from_hex(b"a74e5bfe0122394cf064eb8ed6bbc3770b7d8ad3")?)?;
-
-        // Retrieve the current HEAD commit
-        let head_commit = repo.head()?.state;
-
-        // Obtain the trees of both commits
-        let commit_tree = commit.tree()?;
-        let head_tree = head_commit.tree()?;
-
-        // Compute the diff between the two trees
-        let diff = commit_tree.diff(&head_tree, FileMode::NORMAL)?;*/
-
-        // Iterate over the diffs and print the changed files
-        /*for delta in diff.deltas() {
-            println!("Changed file: {}", delta.new_file().path().display());
-        } */       //let index = repo.try_index()?.expect("index could not be opened");
-        //
-
-        let head = repo.head_commit()?;
-        println!("{:?}", head.id.to_string());
-        for mapping in mappings {
-            let MappingInfo {
-                pattern,
-                destination,
-                ignore,
-            } = mapping.info();
-
-            let remote_hash_path = Path::new(destination).join(".flippy_commit_hash");
-            let remote_hash = cli.fs_read(&remote_hash_path);
-
-            match remote_hash {
-                Ok(remote_hash) => {
-                    // Yay! The flipper has already been initialized with the repo and is going to
-                    // be updated here using gix's diff
-
-                    let remote_hash: [u8; 20] = remote_hash.as_ref().try_into()?;
-
-                    let remote_commit = repo.find_commit(remote_hash)?;
-                    println!("{:?}", remote_commit.id.to_string());
-                    let remote_tree = remote_commit.tree()?;
-
-                    let local_tree = repo.head_tree()?;
-                    /*
-                    let pattern = pattern.to_string_lossy();
-                    let pattern = pattern.as_ref();
-
-                    let (search, att) = repo
-                        .pathspec(
-                            false,
-                            [pattern],
-                            false,
-                            &local_state,
-                            gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
-                        )?
-                        .into_parts();
-                    let mut spec = search;*/
-
-                    for change in repo.diff_tree_to_tree(&remote_tree, &local_tree, None)? {
-                        let r#type = match &change {
-                            gix::diff::tree_with_rewrites::Change::Addition {
-                                location,
-                                relation,
-                                entry_mode,
-                                id,
-                            } => "A",
-                            gix::diff::tree_with_rewrites::Change::Deletion {
-                                location,
-                                relation,
-                                entry_mode,
-                                id,
-                            } => "D",
-                            gix::diff::tree_with_rewrites::Change::Modification {
-                                location,
-                                previous_entry_mode,
-                                previous_id,
-                                entry_mode,
-                                id,
-                            } => "M",
-                            gix::diff::tree_with_rewrites::Change::Rewrite {
-                                source_location,
-                                source_entry_mode,
-                                source_relation,
-                                source_id,
-                                diff,
-                                entry_mode,
-                                id,
-                                location,
-                                relation,
-                                copy,
-                            } => "R",
-                        };
-                        println!("{type} {}", change.location());
-                    }
-                    /*
-                    let diff = gix::diff::index(
-                        &remote_state,
-                        &local_state,
-                        |action| -> anyhow::Result<Action> {
-                            println!("{action:?}");
-                            anyhow::Ok::<Action>(gix::diff::index::Action::Continue)
-                        },
-                        None::<gix::diff::index::RewriteOptions<'_, Never>>,
-                        &mut spec,
-                        &mut |_str, _case, _bo, _outcome| true,
-                    )?;
-
-                    println!("{:?}", diff);*/
-                    //let remote_state = State::from_tree(tree, , validate)?
-                    //                    let remote_state =  repo.commit
-                }
-                Err(flipper_rpc::error::Error::Rpc(
+        Err(e)
+            if matches!(
+                e.downcast_ref::<flipper_rpc::error::Error>(),
+                Some(flipper_rpc::error::Error::Rpc(
                     flipper_rpc::rpc::error::Error::StorageError(
-                        flipper_rpc::rpc::error::StorageError::NotFound,
-                    ),
-                )) => {
-                    // Oh no! The flipper has not been initialized. We must manually copy using
-                    // a tree diff since the .flippy_commit_hash file could have been deleted. If
-                    // it was deleted the upload will take a fuckton longer if there is a lot of
-                    // files. This uses my custom walking_diff algorithim.
+                        flipper_rpc::rpc::error::StorageError::NotFound
+                    )
+                ))
+            ) =>
+        {
+            // Oh no! The flipper has not been initialized. We must manually copy using
+            // a tree diff FOR EVERY REPOSITORY since the .flippy_do_not_remove syncfile
+            // could have been deleted. If  it was deleted the upload will take a fuckton
+            // longer if there is a lot of files. This uses my custom walking_diff algorithim.
 
-                    cli.fs_write(remote_hash_path, head.id.as_slice())?;
+            warn!("Sync file at '{SYNC_FILE_PATH}' does not exist.");
+            warn!(
+                "Ignore the previous message if this your first time running this command on this flipper."
+            );
+            warn!(
+                "If it is not your first time, please take care in keeping that file and make a backup of it. The sync file holds important information to drastically improve transfer speeds and I/O calls. Over time many I/O calls will wear out your SD card."
+            );
 
-                    todo!()
-                }
-                Err(e) => return Err(e.into()), // Generic error
+            info!("Creating blank sync file, re-run the command to compute a diff");
+        }
+        Err(e) => return Err(e),
+    }
+
+    let (mut copy, mut dir, mut remove) = (0usize, 0usize, 0usize);
+
+    for op in &operations {
+        match op {
+            Op::Copy(..) => copy += 1,
+            Op::CreateDir(..) => dir += 1,
+            Op::Remove(..) => remove += 1,
+            _ => (),
+        }
+    }
+
+    let count = copy + dir + remove;
+
+    if count == 0 {
+        info!("All good, no operations to do.");
+        cli.fs_write(SYNC_FILE_PATH, updated_sync_file.serialize())?;
+        return Ok(());
+    }
+
+    let confirm = confirm(format!(
+        "Perform {count} operation(s)? (cp {copy}, mkdir {dir}, rm {remove})",
+    ))
+    .interact()?;
+
+    if !confirm {
+        bail!("Aborted");
+    }
+
+    // If you select NO on the confirm, running the command again will make itself think that it
+    // ran the last time, desyncing the commit hash
+    cli.fs_write(SYNC_FILE_PATH, updated_sync_file.serialize())?;
+
+    println!("Doing those aforementioned operations");
+
+    fn join_as_relative(base: &Path, absolute: &Path) -> PathBuf {
+        // Strip the root prefix (e.g., `/` on Unix, `C:\` on Windows)
+        match absolute.strip_prefix(absolute.components().next().unwrap()) {
+            Ok(rel) => base.join(rel),
+            Err(_) => base.to_path_buf(), // fallback
+        }
+    }
+
+    let mut repo = &PathBuf::new();
+    let mut mapping_root_local = &String::new();
+    let mut mapping_root_remote = "";
+
+    for op in &operations {
+        match op {
+            Op::Repo(path_buf) => repo = path_buf,
+            Op::Mapping(local, remote) => {
+                mapping_root_local = local;
+                mapping_root_remote = remote
+            }
+            Op::Copy(path_buf) => {
+                println!(
+                    "COPYYY {} -> {}{}",
+                    join_as_relative(&repo.join(mapping_root_local), path_buf).display(),
+                    mapping_root_remote,
+                    path_buf.display()
+                );
+            }
+            Op::CreateDir(path_buf) => {
+                println!("CREATE {mapping_root_remote}{}", path_buf.display());
+            }
+            Op::Remove(path_buf) => {
+                println!("REMOVE {mapping_root_remote}{}", path_buf.display());
             }
         }
-        /*
-        if let Err(e) = hash {
-            println!("{}", e); // ERROR_STORAGE_NOT_EXIST
-
-            cli.fs_write(flippy, head.id.to_string())?;
-
-            // Fallback to a custom fast-diff (NO I DID NOT DISCOVER GIX DIFF AFTER MAKING
-            // THIS)
-            //let tree =
-            //  walking_diff::tree::RemoteTree::from_remote(&mut cli, &destination, ignore);
-
-            continue;
-        }
-
-        let hash = hash.unwrap();
-        let hash = hash.as_ref();
-        //            let hash = ObjectId::from_str(hash)?;
-        let commit = repo.find_commit(hash);
-
-        println!("{:?}", hash);
-
-        //let commit = ObjectId::
-
-        let pattern = pattern.to_string_lossy();
-        let pattern = pattern.as_ref();
-
-        /*let mut spec = repo
-            .pathspec(
-                false,
-                [pattern],
-                false,
-                &index,
-                gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
-            )?
-            .search();
-
-        gix::diff::index(
-            remote_index,
-            &index,
-            |change| {
-                println!("{change:?}");
-
-                Ok(gix::diff::index::Action::Continue)
-            },
-            None,
-            &mut spec,
-            &mut |str, case, bo, outcome| false,
-        );*/*/
-        /*
-        for mapping in mappings {
-            let MappingInfo {
-                pattern,
-                destination,
-                ignore,
-            } = mapping.info();
-
-            let pattern = pattern.to_string_lossy();
-            let pattern = pattern.as_ref();
-
-            let mut spec = repo.pathspec(
-                false,
-                [pattern],
-                false,
-                &index,
-                gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
-            )?;
-
-            let longest_common_directory = spec.search().longest_common_directory();
-
-            // Remove the folder path from the repository, it will be readded when we operate on
-            // it
-            let removal_length = longest_common_directory
-                .map(|x| x.to_string_lossy().len())
-                .unwrap_or(0)
-                + 1;
-
-            if let Some(entries) = spec.index_entries_with_paths(&index) {
-                let entries = entries
-                    .map(|(str, _)| {
-                        let str = &str[removal_length..];
-                        let str = str.to_os_str().unwrap();
-
-                        Path::new(str)
-                    })
-                    .collect::<Vec<_>>();
-
-                /*for entry in entries {
-                    println!("{}", entry.display());
-                }*/
-
-                let local = walking_diff::tree::Tree::from_paths(&entries);
-
-                let mut remote =
-                    walking_diff::tree::RemoteTree::from_remote(&mut cli, destination, ignore)?;
-
-                let operations = walking_diff::diff::diff(&local, &remote);
-
-                let old = remote.nodes.len();
-                println!("{:?}", old);
-                apply_ops(&mut remote, &operations);
-                println!("{:?} == {:?}", count_reachable(&remote), local.nodes.len());
-                //println!("{:?}", diff);
-
-                //println!("{}", arena.nodes.len());
-                //let tree = walking_diff::tree::RemoteTree::from_remote(&mut cli, "/ext")?;
-
-                //print_tree(&tree, 0);
-            }
-        }*/
     }
 
     Ok(())
 }
+/*
+*
+* /*for (name, repo) in flip.repositories {
+                let url = gix::url::parse(repo.url.as_str().into())?;
+                let uuid = repo.uuid;
+                let path = path.join("store").join(uuid.to_string());
 
-/// Counts the number of reachable nodes (files + directories) from the root of the RemoteTree,
+                if !fs::try_exists(&path).await? {
+                    bail!(
+                        "repository `{name}` at `{url}` does not exist but is in store\n\t\tplease run `flippy store fetch` to download all repositories"
+                    );
+                }
+
+                let mappings = &repo.mappings;
+                let repo = open(&path)?;
+                let local_state = repo.index()?;
+
+                let spec = repo.pathspec(
+                    false,
+                    mappings.iter().filter_map(|x| {
+                        let info = x.info();
+                        info.pattern.to_str()
+                    }),
+                    false,
+                    &local_state,
+                    gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
+                )?;
+
+                let head_hash = repo.head_commit()?.id;
+                let head_hash = head_hash.as_slice();
+
+                info!("walking_diff_forced");
+
+                updated_sync_file.repositories.push(Repo {
+                    uuid: *uuid.as_bytes(),
+                    hash: head_hash.try_into()?,
+                });
+            }*/
+
+for (name, repo) in flip.repositories.iter() {
+    let head = repo.head_commit()?;
+
+    let mut operations = vec![];
+
+    for mapping in mappings {
+        let MappingInfo {
+            pattern,
+            destination,
+            ignore,
+        } = mapping.info();
+
+        let remote_hash_path = Path::new(destination).join(".flippy_commit_hash");
+        let remote_hash = cli.fs_read(&remote_hash_path);
+
+        match remote_hash {
+            Ok(remote_hash) => {
+                // Yay! The flipper has already been initialized with the repo and is going to
+                // be updated here using gix's diff, which is by far much faster (and optimized)
+                // than my thoopid diff
+
+                let remote_hash: [u8; 20] = remote_hash.as_ref().try_into()?;
+
+                let diff = diff_from_head(remote_commit)?;
+
+                operations.extend(diff.iter().map(|change| match change {
+                    gix::diff::tree_with_rewrites::Change::Addition {
+                        location,
+                        relation,
+                        entry_mode,
+                        id,
+                    } => {
+                        println!("A {location} {relation:?} {entry_mode:?} {id}");
+                    }
+                    gix::diff::tree_with_rewrites::Change::Deletion {
+                        location,
+                        relation,
+                        entry_mode,
+                        id,
+                    } => {
+                        println!("D {location} {relation:?} {entry_mode:?} {id}");
+                    }
+                    gix::diff::tree_with_rewrites::Change::Modification {
+                        location,
+                        previous_entry_mode,
+                        previous_id,
+                        entry_mode,
+                        id,
+                    } => {
+                        println!("M {location} {previous_entry_mode:?} {previous_id:?} {entry_mode:?} {id}");
+                    }
+                    gix::diff::tree_with_rewrites::Change::Rewrite {
+                        source_location,
+                        source_entry_mode,
+                        source_relation,
+                        source_id,
+                        diff,
+                        entry_mode,
+                        id,
+                        location,
+                        relation,
+                        copy,
+                    } => {
+                        println!("R {source_location} {source_entry_mode:?} {source_relation:?} {source_id} {diff:?} {entry_mode:?} {id} {location} {relation:?} {copy}")
+                    },
+                }));
+
+                /*
+                let pattern = pattern.to_string_lossy();
+                let pattern = pattern.as_ref();
+
+                let (search, att) = repo
+                    .pathspec(
+                        false,
+                        [pattern],
+                        false,
+                        &local_state,
+                        gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
+                    )?
+                    .into_parts();
+                let mut spec = search;*/
+
+                /*
+                let diff = gix::diff::index(
+                    &remote_state,
+                    &local_state,
+                    |action| -> anyhow::Result<Action> {
+                        println!("{action:?}");
+                        anyhow::Ok::<Action>(gix::diff::index::Action::Continue)
+                    },
+                    None::<gix::diff::index::RewriteOptions<'_, Never>>,
+                    &mut spec,
+                    &mut |_str, _case, _bo, _outcome| true,
+                )?;
+
+                println!("{:?}", diff);*/
+                //let remote_state = State::from_tree(tree, , validate)?
+                //                    let remote_state =  repo.commit
+            }
+
+            Err(e) => return Err(e.into()), // Generic error
+        }
+    }*/
+/*
+if let Err(e) = hash {
+    println!("{}", e); // ERROR_STORAGE_NOT_EXIST
+
+    cli.fs_write(flippy, head.id.to_string())?;
+
+    // Fallback to a custom fast-diff (NO I DID NOT DISCOVER GIX DIFF AFTER MAKING
+    // THIS)
+    //let tree =
+    //  walking_diff::tree::remotetree::from_remote(&mut cli, &destination, ignore);
+
+    continue;
+}
+
+let hash = hash.unwrap();
+let hash = hash.as_ref();
+//            let hash = ObjectId::from_str(hash)?;
+let commit = repo.find_commit(hash);
+
+println!("{:?}", hash);
+
+//let commit = ObjectId::
+
+let pattern = pattern.to_string_lossy();
+let pattern = pattern.as_ref();
+
+/*let mut spec = repo
+    .pathspec(
+        false,
+        [pattern],
+        false,
+        &index,
+        gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
+    )?
+    .search();
+
+gix::diff::index(
+    remote_index,
+    &index,
+    |change| {
+        println!("{change:?}");
+
+        Ok(gix::diff::index::Action::Continue)
+    },
+    None,
+    &mut spec,
+    &mut |str, case, bo, outcome| false,
+);*/*/
+/*
+for mapping in mappings {
+    let MappingInfo {
+        pattern,
+        destination,
+        ignore,
+    } = mapping.info();
+
+    let pattern = pattern.to_string_lossy();
+    let pattern = pattern.as_ref();
+
+    let mut spec = repo.pathspec(
+        false,
+        [pattern],
+        false,
+        &index,
+        gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
+    )?;
+
+    let longest_common_directory = spec.search().longest_common_directory();
+
+    // Remove the folder path from the repository, it will be readded when we operate on
+    // it
+    let removal_length = longest_common_directory
+        .map(|x| x.to_string_lossy().len())
+        .unwrap_or(0)
+        + 1;
+
+    if let Some(entries) = spec.index_entries_with_paths(&index) {
+        let entries = entries
+            .map(|(str, _)| {
+                let str = &str[removal_length..];
+                let str = str.to_os_str().unwrap();
+
+                Path::new(str)
+            })
+            .collect::<Vec<_>>();
+
+        /*for entry in entries {
+            println!("{}", entry.display());
+        }*/
+
+        let local = walking_diff::tree::Tree::from_paths(&entries);
+
+        let mut remote =
+            walking_diff::tree::RemoteTree::from_remote(&mut cli, destination, ignore)?;
+
+        let operations = walking_diff::diff::diff(&local, &remote);
+
+        let old = remote.nodes.len();
+        println!("{:?}", old);
+        apply_ops(&mut remote, &operations);
+        println!("{:?} == {:?}", count_reachable(&remote), local.nodes.len());
+        //println!("{:?}", diff);
+
+        //println!("{}", arena.nodes.len());
+        //let tree = walking_diff::tree::RemoteTree::from_remote(&mut cli, "/ext")?;
+
+        //print_tree(&tree, 0);
+    }
+}*/
+
+/*
+// Counts the number of reachable nodes (files + directories) from the root of the RemoteTree,
 /// excluding the root itself. Use this to compare to a local Tree.
 use std::collections::HashSet;
 
@@ -439,4 +520,4 @@ fn print_tree_node(arena: &RemoteTree, idx: usize, prefix: String, is_last: bool
         let last = i == kids.len() - 1;
         print_tree_node(arena, child_idx, next_prefix.clone(), last);
     }
-}
+}*/

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use tracing::{debug, trace};
 
-use crate::types::{flip::Flip, mapping::Mapping};
+use crate::types::{flip::Flip, mapping::MappingEntry};
 
 pub async fn run(
     mut flip: Flip,
@@ -13,25 +13,42 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     debug!("Checking if repo {repo} exists");
 
-    let repo_mut = flip
+    let repo = flip
         .repositories
         .get_mut(&repo)
         .context(format!("repository {} not found", repo))?;
 
     trace!("Pushing database mapping to list");
-    repo_mut.mappings.push(match db_type.as_str() {
-        "subghz" => Mapping::SubGHz(path),
-        "rfid" => Mapping::Rfid(path),
-        "nfc" => Mapping::Nfc(path),
-        "ir" => Mapping::IR(path),
-        "ibutton" => Mapping::IButton(path),
-        "badusb" => Mapping::BadUSB(path),
-        _ => unreachable!(),
-    });
 
-    //info!("Successfully mapped {repo}/{} to {db_type}", path.display());
+    let mapping = match db_type.as_str() {
+        "subghz" => &mut repo.mappings.subghz,
+        "rfid" => &mut repo.mappings.rfid,
+        "nfc" => &mut repo.mappings.nfc,
+        "ir" => &mut repo.mappings.ir,
+        "ibutton" => &mut repo.mappings.ibutton,
+        "badusb" => &mut repo.mappings.badusb,
+        _ => unreachable!(),
+    };
+
+    add_include(mapping, path);
 
     flip.write().await?;
 
     Ok(())
+}
+
+fn add_include(mapping: &mut Option<MappingEntry>, path: PathBuf) {
+    let path = path.to_string_lossy().to_string();
+
+    match mapping {
+        Some(existing) => {
+            existing.include.push(path);
+        }
+        None => {
+            *mapping = Some(MappingEntry {
+                include: vec![path],
+                exclude: vec![],
+            })
+        }
+    }
 }

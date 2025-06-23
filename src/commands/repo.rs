@@ -4,7 +4,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    types::{flip::Flip, repository::Repository},
+    types::{flip::Flip, mapping::Mappings, repository::Repository},
     validators::validate_project_name,
 };
 
@@ -15,21 +15,28 @@ pub async fn add(mut flip: Flip, url: Url, name: String) -> anyhow::Result<()> {
     debug!("Validating name");
     validate_project_name(&name)?;
 
-    debug!("Checking if repo already exists");
-    if flip.repositories.contains_key(&name) {
-        return Err(anyhow!("repository: {} already exists", name));
-    }
-
     let url = url.to_string();
     let data = url.as_bytes();
+    let uuid = Uuid::new_v5(&Uuid::NAMESPACE_URL, data);
+
+    debug!("Checking if repo already exists");
+    if flip
+        .repositories
+        .iter()
+        .any(|(fname, frepo)| **fname == name || frepo.uuid == uuid)
+    {
+        return Err(anyhow!(
+            "repository: {name}/{uuid} already exists, either by UUID or name"
+        ));
+    }
 
     debug!("inserting repository into list, building UUIDv5");
     flip.repositories.insert(
         name.clone(),
         Repository {
-            uuid: Uuid::new_v5(&Uuid::NAMESPACE_URL, data),
+            uuid,
             url,
-            mappings: vec![],
+            mappings: Mappings::default(),
         },
     );
 

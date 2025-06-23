@@ -1,29 +1,25 @@
-use std::{
-    ffi::OsString,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use anyhow::Result;
-
-use crate::walking_diff::tree::{RemoteTree, Tree};
+use crate::walking_diff::tree::{Node, RemoteNode, RemoteTree, Tree};
 
 #[derive(Debug)]
 pub enum Op {
+    /// Root dir
+    Repo(PathBuf),
+    /// src -> destination
+    Mapping(String, &'static str),
     Copy(PathBuf),
     CreateDir(PathBuf),
     Remove(PathBuf),
 }
 
-pub fn diff(local: &Tree, remote: &RemoteTree) -> Vec<Op> {
-    println!("{:#?}", local.nodes[0]);
-    println!("{:#?}", remote.nodes[0]);
-
-    let mut ops = vec![];
-
-    let matches = prune_pass(local, remote, &mut ops);
-    creation_pass(local, remote, &mut ops);
-
-    ops
+pub fn diff<F>(local: &Tree, remote: &RemoteTree, ops: &mut Vec<Op>, different: F)
+where
+    F: FnMut(&Node, &RemoteNode) -> bool,
+{
+    let matches = prune_pass(local, remote, ops);
+    creation_pass(local, remote, ops);
+    update_pass(local, remote, matches, different, ops);
 }
 
 fn prune_pass(
@@ -106,6 +102,7 @@ fn creation_pass(local: &Tree, remote: &RemoteTree, ops: &mut Vec<Op>) {
             let remote_node = &remote.nodes[r_idx];
             for (name, &l_child_idx) in &local_node.children {
                 let mut child_path = path.clone();
+
                 child_path.push(name.as_ref());
                 if let Some(&r_child_idx) = remote_node.children.get(name) {
                     walk(
@@ -129,6 +126,25 @@ fn creation_pass(local: &Tree, remote: &RemoteTree, ops: &mut Vec<Op>) {
 
     let root = PathBuf::from("/");
     walk(local, remote, 0, Some(0), &root, ops);
+}
+
+fn update_pass<F>(
+    local: &Tree,
+    remote: &RemoteTree,
+    matched: Vec<(PathBuf, usize, usize)>,
+    mut different: F,
+    ops: &mut Vec<Op>,
+) where
+    F: FnMut(&Node, &RemoteNode) -> bool,
+{
+    for (path, l_idx, r_idx) in matched {
+        if local.is_file(l_idx) {
+            // File node
+            if different(&local.nodes[l_idx], &remote.nodes[r_idx]) {
+                ops.push(Op::Copy(path));
+            }
+        }
+    }
 }
 
 /*

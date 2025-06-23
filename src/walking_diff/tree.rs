@@ -26,13 +26,17 @@ pub struct Node {
     // Since this type is constructed from a list of FILES, when a node has no children, it is
     // CERTIAN that the node is a file.
     pub children: FxHashMap<Rc<OsStr>, usize>,
+
+    /// None if directory, 2 indicators
+    pub size: Option<u32>,
 }
 
 impl Node {
-    pub fn new(name: impl AsRef<OsStr>) -> Self {
+    pub fn new(name: impl AsRef<OsStr>, size: Option<u32>) -> Self {
         Self {
             name: Rc::from(name.as_ref()),
             children: Default::default(),
+            size,
         }
     }
 }
@@ -54,7 +58,7 @@ impl Tree {
 
     pub fn new(capacity: usize) -> Self {
         let mut nodes = Vec::with_capacity(capacity);
-        nodes.push(Node::new("/"));
+        nodes.push(Node::new("/", None));
 
         Self { nodes }
     }
@@ -67,14 +71,15 @@ impl Tree {
         self.nodes[node].children.is_empty()
     }
 
-    pub fn from_paths<P: AsRef<Path> + Sync>(paths: &[P]) -> Self {
+    pub fn from_path_and_sizes<P: AsRef<Path> + Sync>(paths: &[(P, u32)]) -> Self {
         // TODO: Tune precision to avoid underestimation (requires reallocation) and have minimal
         // overhead when hashing (kinda expensive to hash everything 4x more)
         let hll = HyperLogLog::with_hasher(12, FxBuildHasher::new());
 
         let hasher = FxBuildHasher::new();
 
-        for p in paths {
+        // TODO: Find a way to check for identical things here without HLL, and this will get EXACT
+        for (p, _) in paths {
             let mut parent = 0;
             for comp in p.as_ref().components() {
                 if let Component::Normal(name) = comp {
@@ -94,14 +99,14 @@ impl Tree {
         let estimate = hll.count() + 1;
         let mut tree = Self::new(estimate);
 
-        for p in paths {
+        for (p, size) in paths {
             let mut parent = 0; // start at root
             for name in p.as_ref().components() {
                 if let Component::Normal(name) = name {
                     if let Some(&child_idx) = tree.find_child_by_name(parent, name) {
                         parent = child_idx;
                     } else {
-                        let new_idx = tree.add_child_to(Node::new(name), parent);
+                        let new_idx = tree.add_child_to(Node::new(name, Some(*size)), parent);
                         parent = new_idx;
                     }
                 }

@@ -644,9 +644,9 @@ dependencies = [
 
 [[package]]
 name = "flipper-rpc"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f7c4bed514bbc45979507b5a0a048b4824ab3de7939e58f9443be71c3b8df51"
+checksum = "0edcdce1acbf0480de5258bb6ec72290633d3dbf82a301167424d675ec0f1d58"
 dependencies = [
  "md5",
  "memchr",
@@ -658,7 +658,7 @@ dependencies = [
 
 [[package]]
 name = "flippy"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
