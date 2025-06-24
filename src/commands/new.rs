@@ -116,7 +116,7 @@ fn new_wizard(default_name: Option<String>) -> anyhow::Result<(String, Firmware)
                 "unleashed" => Firmware::Unleashed(channel),
                 "momentum" => Firmware::Momentum(channel),
 
-                _ => unreachable!(),
+                _ => unreachable!("todo: add more fw matches"),
             }
         }
     };

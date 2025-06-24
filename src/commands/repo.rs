@@ -31,8 +31,9 @@ pub async fn add(mut flip: Flip, url: Url, name: String) -> anyhow::Result<()> {
     }
 
     debug!("inserting repository into list, building UUIDv5");
+    info!("Successfully created repo {}", name);
     flip.repositories.insert(
-        name.clone(),
+        name,
         Repository {
             uuid,
             url,
@@ -41,8 +42,6 @@ pub async fn add(mut flip: Flip, url: Url, name: String) -> anyhow::Result<()> {
     );
 
     flip.write().await?;
-
-    info!("Successfully created repo {}", name);
 
     Ok(())
 }

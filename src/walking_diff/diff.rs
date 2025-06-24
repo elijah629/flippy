@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use crate::walking_diff::tree::{Node, RemoteNode, RemoteTree, Tree};
+use anyhow::Result;
+
+use crate::walking_diff::tree::{RemoteTree, Tree};
 
 #[derive(Debug)]
 pub enum Op {
@@ -13,13 +15,15 @@ pub enum Op {
     Remove(PathBuf),
 }
 
-pub fn diff<F>(local: &Tree, remote: &RemoteTree, ops: &mut Vec<Op>, different: F)
+pub fn diff<F>(local: &Tree, remote: &RemoteTree, ops: &mut Vec<Op>, different: F) -> Result<()>
 where
-    F: FnMut(&Node, &RemoteNode) -> bool,
+    F: FnMut(&Path, Option<u32>, Option<u32>) -> Result<bool>,
 {
     let matches = prune_pass(local, remote, ops);
     creation_pass(local, remote, ops);
-    update_pass(local, remote, matches, different, ops);
+    update_pass(local, remote, matches, different, ops)?;
+
+    Ok(())
 }
 
 fn prune_pass(
@@ -71,7 +75,8 @@ fn prune_pass(
 
 /// Emits operations to create a complete subtree rooted at `local_idx` and `path`.
 fn emit_create_subtree(tree: &Tree, local_idx: usize, path: &PathBuf, ops: &mut Vec<Op>) {
-    if tree.is_file(local_idx) {
+    let local_node = &tree.nodes[local_idx];
+    if local_node.children.is_empty() {
         // File
         ops.push(Op::Copy(path.clone()));
     } else {
@@ -79,7 +84,7 @@ fn emit_create_subtree(tree: &Tree, local_idx: usize, path: &PathBuf, ops: &mut 
         if path != &PathBuf::from("/") {
             ops.push(Op::CreateDir(path.clone()));
         }
-        for (name, &child_idx) in &tree.nodes[local_idx].children {
+        for (name, &child_idx) in &local_node.children {
             let mut child_path = path.clone();
             child_path.push(name.as_ref());
             emit_create_subtree(tree, child_idx, &child_path, ops);
@@ -134,17 +139,20 @@ fn update_pass<F>(
     matched: Vec<(PathBuf, usize, usize)>,
     mut different: F,
     ops: &mut Vec<Op>,
-) where
-    F: FnMut(&Node, &RemoteNode) -> bool,
+) -> Result<()>
+where
+    F: FnMut(&Path, Option<u32>, Option<u32>) -> Result<bool>,
 {
     for (path, l_idx, r_idx) in matched {
-        if local.is_file(l_idx) {
-            // File node
-            if different(&local.nodes[l_idx], &remote.nodes[r_idx]) {
-                ops.push(Op::Copy(path));
-            }
+        let local_node = &local.nodes[l_idx];
+        if local_node.children.is_empty()
+            && different(&path, local_node.size, remote.nodes[r_idx].size)?
+        {
+            ops.push(Op::Copy(path));
         }
     }
+
+    Ok(())
 }
 
 /*

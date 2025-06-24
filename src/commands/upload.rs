@@ -9,18 +9,25 @@ use crate::{
 use anyhow::{Result, bail};
 use cliclack::confirm;
 use flipper_rpc::{
-    fs::{FsRead, FsWrite},
+    fs::{FsCreateDir, FsRead, FsRemove, FsWrite},
     transport::serial::rpc::SerialRpcTransport,
 };
 use gix::{Commit, open};
 use std::path::{Path, PathBuf};
+use tokio::fs;
 use tracing::{info, warn};
 
 mod diff;
 mod flipper;
 mod pathspec;
 
-pub async fn run(flip: Flip) -> Result<()> {
+pub async fn run(flip: Flip, force_walkdir: bool) -> Result<()> {
+    if force_walkdir {
+        unimplemented!(
+            "--force-walkdir is not implemented yet. Pleasse just delete {SYNC_FILE_PATH} manually"
+        );
+    }
+
     let mut cli = pick_cli()?;
 
     // TODO: Implement SD card writing. Option to take out the SD card and write to it directly (if the host has a SD reader), instead of sending files through RPC. this will improve speed greatly for those who can
@@ -106,19 +113,7 @@ pub async fn run(flip: Flip) -> Result<()> {
         bail!("Aborted");
     }
 
-    // If you select NO on the confirm, running the command again will make itself think that it
-    // ran the last time, desyncing the commit hash
-    cli.fs_write(SYNC_FILE_PATH, updated_sync_file.serialize())?;
-
-    println!("Doing those aforementioned operations");
-
-    fn join_as_relative(base: &Path, absolute: &Path) -> PathBuf {
-        // Strip the root prefix (e.g., `/` on Unix, `C:\` on Windows)
-        match absolute.strip_prefix(absolute.components().next().unwrap()) {
-            Ok(rel) => base.join(rel),
-            Err(_) => base.to_path_buf(), // fallback
-        }
-    }
+    info!("Doing those aforementioned operations");
 
     let mut repo = &PathBuf::new();
     let mut mapping_root_local = &String::new();
@@ -126,29 +121,53 @@ pub async fn run(flip: Flip) -> Result<()> {
 
     for op in &operations {
         match op {
-            Op::Repo(path_buf) => repo = path_buf,
+            Op::Repo(path_buf) => {
+                repo = path_buf;
+            }
             Op::Mapping(local, remote) => {
                 mapping_root_local = local;
                 mapping_root_remote = remote
             }
             Op::Copy(path_buf) => {
-                println!(
-                    "COPYYY {} -> {}{}",
-                    join_as_relative(&repo.join(mapping_root_local), path_buf).display(),
-                    mapping_root_remote,
-                    path_buf.display()
-                );
+                let from = join_as_relative(repo.join(mapping_root_local), path_buf);
+                let to = join_as_relative(mapping_root_remote, path_buf);
+                info!("copy   {from:?} -> {to:?}");
+
+                let from = fs::read(from).await?;
+                cli.fs_write(to, from)?;
             }
             Op::CreateDir(path_buf) => {
-                println!("CREATE {mapping_root_remote}{}", path_buf.display());
+                let to = join_as_relative(mapping_root_remote, path_buf);
+                info!("mkdir  {to:?}");
+
+                cli.fs_create_dir(to)?;
             }
             Op::Remove(path_buf) => {
-                println!("REMOVE {mapping_root_remote}{}", path_buf.display());
+                let to = join_as_relative(mapping_root_remote, path_buf);
+
+                info!("remove {to:?}");
+                cli.fs_remove(to, true)?;
             }
         }
     }
 
+    // If you select NO on the confirm, running the command again will make itself think that it
+    // ran the last time, desyncing the commit hash
+    // Only update if it didnt fail (likely in beta)
+    cli.fs_write(SYNC_FILE_PATH, updated_sync_file.serialize())?;
+
     Ok(())
+}
+
+pub fn join_as_relative(base: impl AsRef<Path>, absolute: impl AsRef<Path>) -> PathBuf {
+    // Strip the root prefix (e.g., `/` on Unix, `C:\` on Windows)
+    match absolute
+        .as_ref()
+        .strip_prefix(absolute.as_ref().components().next().unwrap())
+    {
+        Ok(rel) => base.as_ref().join(rel),
+        Err(_) => base.as_ref().to_path_buf(), // fallback
+    }
 }
 /*
 *

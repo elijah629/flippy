@@ -1,11 +1,10 @@
-use std::path::PathBuf;
-
 use crate::Flip;
 use crate::commands::upload::Commit;
 use crate::commands::upload::Path;
 use crate::commands::upload::SerialRpcTransport;
 use crate::commands::upload::bail;
 use crate::commands::upload::info;
+use crate::commands::upload::join_as_relative;
 use crate::commands::upload::open;
 use crate::commands::upload::pathspec::pathspec_from_pattern;
 use crate::git::diff::diff_from_head;
@@ -14,9 +13,13 @@ use crate::types::remote_sync_file::Repo;
 use crate::types::remote_sync_file::SyncFile;
 use crate::walking_diff;
 use crate::walking_diff::diff::Op;
+use anyhow::Context;
 use anyhow::Result;
+use flipper_rpc::fs::FsMd5;
+use flipper_rpc::fs::helpers::os_str_to_str;
 use gix::Pathspec;
 use gix::bstr::ByteSlice;
+use std::path::PathBuf;
 use tokio::fs;
 
 pub async fn diff_all_repositories(
@@ -45,7 +48,7 @@ pub async fn diff_all_repositories(
 
         let remote_hash = sync_file.find_hash(&uuid);
 
-        operations.push(Op::Repo(path));
+        operations.push(Op::Repo(path.clone()));
 
         match remote_hash {
             Some(remote_hash) => {
@@ -72,39 +75,44 @@ pub async fn diff_all_repositories(
                         ignore,
                     } = mapping.info();
 
-                    let (mut spec, local_state) = pathspec_from_pattern(&repo, p.patterns())?;
+                    let (
+                        //
+                        mut spec,
+                        local_state,
+                    ) = pathspec_from_pattern(&repo, p.patterns())?;
 
                     let search = spec.search();
 
                     // Remove the folder path from the repository, it will be readded when we operate on
                     // it
-                    let removal_length = if let Some(longest_common_directory) =
-                        search.longest_common_directory()
-                    {
-                        let longest_common_directory = longest_common_directory.to_str().unwrap();
-                        operations.push(Op::Mapping(
-                            longest_common_directory.to_string(),
-                            destination,
-                        ));
+                    let lcd_path = search
+                        .longest_common_directory()
+                        .context("longest_common_directory was None")?;
 
-                        longest_common_directory.len() + 1
-                    } else {
-                        operations.push(Op::Mapping("".to_string(), destination));
+                    let lcd = os_str_to_str(lcd_path.as_os_str())?;
 
-                        1
-                    };
+                    operations.push(Op::Mapping(lcd.to_string(), destination));
+
+                    let local_root = path.join(&lcd_path);
+                    let removal_length = lcd.len() + 1;
 
                     let paths = spec
-                        .index_entries_with_paths(&local_state)
-                        .unwrap()
-                        .map(|(str, entry)| {
+                        .index_entries_with_paths(&local_state).context("Index was empty, no files to change. You may ignore this if your pathspecs did not match anything")?.map(|(str, entry)| {
                             let str = &str[removal_length..];
-                            let str = str.to_os_str().unwrap();
+                            let str = str.to_os_str().context("Path was not UTF-8").unwrap();
                             (Path::new(str), entry.stat.size)
                         })
                         .collect::<Vec<_>>();
 
-                    walking_diff(cli, &paths, destination, ignore, operations)?;
+                    walking_diff(
+                        //
+                        cli,
+                        &paths,
+                        &local_root,
+                        destination,
+                        ignore,
+                        operations,
+                    )?;
                 }
             }
         }
@@ -161,7 +169,7 @@ fn git_diff(remote_commit: Commit<'_>, ops: &mut Vec<Op>, search: &mut Pathspec)
                 } => {
 
                 },*/
-                _ => unreachable!(),
+                _ => unreachable!("rewrites are disabled"),
             }),
     );
 
@@ -170,22 +178,44 @@ fn git_diff(remote_commit: Commit<'_>, ops: &mut Vec<Op>, search: &mut Pathspec)
 
 fn walking_diff<P: AsRef<Path> + Sync>(
     cli: &mut SerialRpcTransport,
-    paths: &[(P, u32)],
-    root: impl AsRef<Path>,
-    ignore: &'static [&'static str],
+    local_paths: &[(P, u32)],
+    local_root: impl AsRef<Path>,
+    remote_root: impl AsRef<Path>,
+    remote_ignore: &'static [&'static str],
     ops: &mut Vec<Op>,
 ) -> Result<()> {
-    let local_tree = walking_diff::tree::Tree::from_path_and_sizes(paths);
-    let remote_tree = walking_diff::tree::RemoteTree::from_remote(cli, root, ignore)?;
+    info!("Creating local tree");
+    let local_tree = walking_diff::tree::Tree::from_path_and_sizes(local_paths);
+    info!("Creating remote tree");
+    let remote_tree =
+        walking_diff::tree::RemoteTree::from_remote(cli, &remote_root, remote_ignore)?;
 
-    walking_diff::diff::diff(&local_tree, &remote_tree, ops, |local, remote| {
-        local.size != remote.size
-        /*{
-           return true;
-        }
-        // CHECK MD5, IF SAME SIZE AND DIFF MD5, RETURN TRUE ELSE FALSE
-        false*/
-    });
+    let local = local_root.as_ref();
+    let remote = remote_root.as_ref();
+
+    info!("Diffing");
+    walking_diff::diff::diff(
+        &local_tree,
+        &remote_tree,
+        ops,
+        |path, local_size, remote_size| {
+            Ok(local_size != remote_size || {
+                let local = std::fs::read(join_as_relative(local, path))?;
+                let local_hash = md5::compute(local);
+
+                let local_hash = format!("{local_hash:x}");
+                let remote_hash = cli.fs_md5(join_as_relative(remote, path))?;
+
+                // TODO: Cache results into the store somehow
+                let diff = remote_hash != local_hash;
+                info!(
+                    "diff CHKSM {local_hash} <-l/r-> {remote_hash} {}",
+                    if diff { '❌' } else { '✅' }
+                );
+                diff
+            })
+        },
+    )?;
 
     Ok(())
 }

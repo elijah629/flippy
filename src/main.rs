@@ -1,10 +1,9 @@
 use anyhow::{Result, anyhow};
-use clap::{Parser, Subcommand, arg, command};
-use std::path::PathBuf;
+use clap::{ArgAction, Parser, Subcommand};
+use std::path::{Path, PathBuf};
 use tokio::fs;
-use tracing::Level;
+use tracing::{Level, error};
 use types::flip::Flip;
-use url::Url;
 
 mod commands;
 mod git;
@@ -13,112 +12,234 @@ mod types;
 mod validators;
 mod walking_diff;
 
-/// CLI entrypoint
+/// Flippy: Automates upgrades and pulls remote databases, files, and firmware for the Flipper Zero.
 #[derive(Parser, Debug)]
 #[command(
-    about = "Flippy is a CLI tool to manager flipper zero repositories, databases, and firmware. It will copy and install firmware upgrades and pull remote databases automatically.",
+    name = "flippy",
+    version,
+    about = "Automates upgrades and pulls remote databases, files, and firmware for the Flipper Zero :kekw:",
+    propagate_version = true,
     subcommand_required = true
 )]
 struct Cli {
-    /// Sets the logging level
-    #[arg(long, default_value = "info")]
-    log_level: Level,
+    /// Verbosity level (-v, -vv, -vvv)
+    #[arg(short, long, action = ArgAction::Count)]
+    verbose: u8,
 
     #[command(subcommand)]
     command: Commands,
-
-    /// Path to flip
-    #[arg(value_parser, default_value = ".")]
-    path: PathBuf,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Interactive setup for a new flip
-    New,
-
-    Upload,
-
-    /// Manages mappings in flip.toml files
-    Map {
-        #[arg(value_parser = [ "subghz", "rfid","nfc", "ir", "ibutton", "badusb" ])]
-        db_type: String,
-
-        /// Name of repository
-        repo: String,
-
-        /// Path
+    New {
+        /// Path to initialize
+        #[arg(value_parser, default_value = ".")]
         path: PathBuf,
     },
 
-    /// Add or removes repositories
+    /// Upload local changes to remote storage
+    Upload {
+        /// Force walking full directory tree
+        #[arg(short, long)]
+        force_walkdir: bool,
+
+        /// Path of project
+        #[arg(value_parser, default_value = ".")]
+        path: PathBuf,
+    },
+
+    /// Manages mappings in flip.toml files
+    Map {
+        /// Database type
+        #[arg(value_parser = ["subghz","rfid","nfc","ir","ibutton","badusb"])]
+        db_type: String,
+
+        /// Repository name
+        repo: String,
+
+        /// Pathspec to include or exclude
+        pathspec: PathBuf,
+
+        /// Exclude instead of include
+        #[arg(long)]
+        excludes: bool,
+
+        /// Path of project
+        #[arg(value_parser, default_value = ".")]
+        path: PathBuf,
+    },
+
+    /// Add or remove repositories
     Repo {
         #[command(subcommand)]
-        command: Repo,
+        command: RepoCommand,
     },
 
     /// Manages firmware settings
     Firmware {
         #[command(subcommand)]
-        command: Firmware,
+        command: FirmwareCommand,
     },
 
     /// Manages store files and updates repositories
     Store {
         #[command(subcommand)]
-        command: Store,
+        command: StoreCommand,
     },
 }
 
 #[derive(Subcommand, Debug)]
-enum Repo {
-    /// Adds a repository to fetch files/folders from
+enum RepoCommand {
+    /// Add a repository to fetch files/folders from
     Add {
         /// URL to repository
         #[arg(value_parser)]
-        url: Url,
+        url: url::Url,
 
-        /// Name to use for repository identification
+        /// Name for identification
         name: String,
+
+        /// Path of project
+        #[arg(value_parser, default_value = ".")]
+        path: PathBuf,
     },
 
-    /// Removes a repository
+    /// Remove a repository
     Remove {
         /// Repository name
         name: String,
+
+        /// Path of project
+        #[arg(value_parser, default_value = ".")]
+        path: PathBuf,
     },
 }
 
 #[derive(Subcommand, Debug)]
-enum Firmware {
-    /// Sets the firmware used during updates
+enum FirmwareCommand {
+    /// Set the firmware used during updates
     Set {
         /// URL or identifier of firmware
         firmware: String,
+
+        /// Path of project
+        #[arg(value_parser, default_value = ".")]
+        path: PathBuf,
     },
 
-    /// Pulls the current firmware into the store
-    Pull,
+    /// Pull current firmware into the store
+    Pull {
+        /// Path of project
+        #[arg(value_parser, default_value = ".")]
+        path: PathBuf,
+    },
 }
 
 #[derive(Subcommand, Debug)]
-enum Store {
-    /// Fetches all repositories and firmware files
-    Fetch, //{
-           // /// Uses experimental 'git sparse-checkout'
-           // TODO: Wait for gix to implement sparse functionality.
-           // #[arg(short = 'o', long = "optimize")]
-           // optimize: bool,
-           // },
+enum StoreCommand {
+    /// Fetch all repositories and firmware files
+    Fetch {
+        /// Path of project
+        #[arg(value_parser, default_value = ".")]
+        path: PathBuf,
+    },
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    init_logging(cli.verbose);
+
+    if let Err(err) = run(cli).await {
+        error!("{:#}", err);
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+async fn run(cli: Cli) -> Result<()> {
+    match cli.command {
+        Commands::New { path } => {
+            commands::new::run(path).await?;
+        }
+        Commands::Upload {
+            force_walkdir,
+            path,
+        } => {
+            let flip = try_flip_from_path(&path).await?;
+            commands::upload::run(flip, force_walkdir).await?;
+        }
+        Commands::Map {
+            db_type,
+            repo,
+            pathspec,
+            excludes,
+            path,
+        } => {
+            let flip = try_flip_from_path(&path).await?;
+            commands::map::run(flip, db_type, repo, pathspec, excludes).await?;
+        }
+        Commands::Repo { command } => match command {
+            RepoCommand::Add { url, name, path } => {
+                let flip = try_flip_from_path(&path).await?;
+                commands::repo::add(flip, url, name).await?;
+            }
+
+            RepoCommand::Remove { name, path } => {
+                let flip = try_flip_from_path(&path).await?;
+                commands::repo::remove(flip, name).await?;
+            }
+        },
+
+        Commands::Firmware { command } => match command {
+            FirmwareCommand::Set { firmware, path } => {
+                let flip = try_flip_from_path(&path).await?;
+
+                commands::firmware::set(flip, firmware).await?;
+            }
+            FirmwareCommand::Pull { path } => {
+                let flip = try_flip_from_path(&path).await?;
+
+                commands::firmware::pull(flip).await?;
+            }
+        },
+
+        Commands::Store { command } => match command {
+            StoreCommand::Fetch { path } => {
+                let flip = try_flip_from_path(&path).await?;
+
+                commands::store::fetch(flip).await?;
+            }
+        },
+    }
+    Ok(())
+}
+
+async fn try_flip_from_path(p: impl AsRef<Path>) -> Result<Flip> {
+    let project = fs::canonicalize(p).await?;
+    if !Flip::exists(&project).await? {
+        return Err(anyhow!("No flippy project found at {}", project.display()));
+    }
+    let flip = Flip::from_path(&project).await?;
+
+    Ok(flip)
+}
+
+/// Initialize logging based on verbosity count
+fn init_logging(level: u8) {
+    let level = match level {
+        0 => Level::INFO,
+        1 => Level::DEBUG,
+        2 => Level::TRACE,
+        _ => Level::TRACE,
+    };
+
     let mut sub = tracing_subscriber::fmt()
         .compact()
-        .with_max_level(cli.log_level)
+        .with_max_level(level)
         .with_target(true)
         .with_thread_ids(false)
         .with_thread_names(false)
@@ -129,69 +250,9 @@ async fn main() -> Result<()> {
         .without_time()
         .with_target(true);
 
-    if cli.log_level >= Level::TRACE {
+    if level == Level::TRACE {
         sub = sub.with_file(true).with_line_number(true);
     }
 
     sub.init();
-
-    if let Err(e) = run(cli).await {
-        tracing::error!("{e}");
-
-        std::process::exit(1);
-    }
-
-    Ok(())
-}
-
-async fn run(cli: Cli) -> Result<()> {
-    if matches!(cli.command, Commands::New) {
-        commands::new::run(cli.path).await?;
-        return Ok(());
-    }
-
-    let path = fs::canonicalize(&cli.path).await?;
-
-    if !Flip::exists(&path).await? {
-        return Err(anyhow!("Project not found in {}", path.display()));
-    }
-
-    let flip = Flip::from_path(&path).await?;
-
-    match cli.command {
-        Commands::Upload => commands::upload::run(flip).await?,
-
-        Commands::Map {
-            db_type,
-            repo,
-            path,
-        } => commands::map::run(flip, db_type, repo, path).await?,
-
-        Commands::Repo { command } => match command {
-            Repo::Add { url, name } => {
-                commands::repo::add(flip, url, name).await?;
-            }
-
-            Repo::Remove { name } => {
-                commands::repo::remove(flip, name).await?;
-            }
-        },
-
-        Commands::Firmware { command } => match command {
-            Firmware::Set { firmware } => {
-                commands::firmware::set(flip, firmware).await?;
-            }
-            Firmware::Pull => commands::firmware::pull(flip).await?,
-        },
-
-        Commands::Store { command } => match command {
-            Store::Fetch => {
-                commands::store::fetch(flip).await?;
-            }
-        },
-
-        _ => unreachable!("Impossible for new to reach after new was checked"),
-    }
-
-    Ok(())
 }

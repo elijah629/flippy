@@ -128,7 +128,9 @@ impl Directory {
         let mut item = progress.add_child("fetching directory");
 
         let mut response = reqwest::get(url).await?;
-        let length = response.content_length().unwrap();
+        let length = response
+            .content_length()
+            .context("could not extract content length")?;
 
         item.init(
             response.content_length().map(|x| x as usize),

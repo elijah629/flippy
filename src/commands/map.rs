@@ -10,6 +10,7 @@ pub async fn run(
     db_type: String,
     repo: String,
     path: PathBuf,
+    excludes: bool,
 ) -> anyhow::Result<()> {
     debug!("Checking if repo {repo} exists");
 
@@ -27,10 +28,14 @@ pub async fn run(
         "ir" => &mut repo.mappings.ir,
         "ibutton" => &mut repo.mappings.ibutton,
         "badusb" => &mut repo.mappings.badusb,
-        _ => unreachable!(),
+        _ => unreachable!("matched by clap"),
     };
 
-    add_include(mapping, path);
+    if excludes {
+        add_exclude(mapping, path);
+    } else {
+        add_include(mapping, path);
+    }
 
     flip.write().await?;
 
@@ -48,6 +53,22 @@ fn add_include(mapping: &mut Option<MappingEntry>, path: PathBuf) {
             *mapping = Some(MappingEntry {
                 include: vec![path],
                 exclude: vec![],
+            })
+        }
+    }
+}
+
+fn add_exclude(mapping: &mut Option<MappingEntry>, path: PathBuf) {
+    let path = format!(":(exclude){}", path.to_string_lossy());
+
+    match mapping {
+        Some(existing) => {
+            existing.exclude.push(path);
+        }
+        None => {
+            *mapping = Some(MappingEntry {
+                include: vec![],
+                exclude: vec![path],
             })
         }
     }

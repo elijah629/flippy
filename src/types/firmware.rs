@@ -99,7 +99,7 @@ impl Firmware {
             Firmware::Official(_) => OFFICIAL_DIRECTORY,
             Firmware::Unleashed(_) => UNLEASHED_DIRECTORY,
             Firmware::Momentum(_) => MOMENTUM_DIRECTORY,
-            Firmware::Custom(_) => unreachable!(),
+            Firmware::Custom(_) => unreachable!("matched in fetch_manifest, error taken care of."),
         }
     }
 }

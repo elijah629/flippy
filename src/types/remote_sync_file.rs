@@ -3,7 +3,6 @@
 //! happen
 
 use anyhow::{Result, bail};
-use flipper_rpc::{fs::FsRead, transport::serial::rpc::SerialRpcTransport};
 use uuid::Uuid;
 
 pub const SYNC_FILE_PATH: &str = "/ext/.flippy_do_not_remove";

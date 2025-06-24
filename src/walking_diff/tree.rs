@@ -27,7 +27,7 @@ pub struct Node {
     // CERTIAN that the node is a file.
     pub children: FxHashMap<Rc<OsStr>, usize>,
 
-    /// None if directory, 2 indicators
+    /// DO NOT USE THIS AS AN INDICATOR IFNODE IS A DIR/FILE IT IS WRONG
     pub size: Option<u32>,
 }
 
@@ -61,14 +61,6 @@ impl Tree {
         nodes.push(Node::new("/", None));
 
         Self { nodes }
-    }
-
-    pub fn is_directory(&self, node: usize) -> bool {
-        !self.nodes[node].children.is_empty()
-    }
-
-    pub fn is_file(&self, node: usize) -> bool {
-        self.nodes[node].children.is_empty()
     }
 
     pub fn from_path_and_sizes<P: AsRef<Path> + Sync>(paths: &[(P, u32)]) -> Self {
@@ -159,14 +151,8 @@ impl RemoteTree {
         }
     }
 
-    pub fn is_directory(&self, node: usize) -> bool {
-        self.nodes[node].size.is_none()
-    }
-
-    pub fn is_file(&self, node: usize) -> bool {
-        self.nodes[node].size.is_some()
-    }
-
+    // WARNING: THIS IS HIGHLY INNEFICIENT. It re-allocates data! :scared:
+    // Do not use this in prod unless you are a goober
     pub fn from_remote(
         cli: &mut SerialRpcTransport,
         root: impl AsRef<Path>,
@@ -174,7 +160,8 @@ impl RemoteTree {
     ) -> Result<Self> {
         let mut tree = Self::new();
 
-        let mut queue = VecDeque::new();
+        // TODO: Find a proper size
+        let mut queue = VecDeque::new(); // WARNING: NON-FIXED ALLOCATION
         queue.push_back((0usize, root.as_ref().to_path_buf()));
 
         while let Some((parent_idx, path)) = queue.pop_front() {
