@@ -3,6 +3,8 @@ name = "flippy"
 version = "0.2.1"
 rust-version = "1.86.0"
 edition = "2024"
+license = "MIT"
+description = "Automates upgrades and pulls remote databases, files, and firmware for the Flipper Zero :kekw:"
 
 [dependencies]
 # Errors & logging
