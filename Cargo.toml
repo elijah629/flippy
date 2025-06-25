@@ -5,6 +5,8 @@ rust-version = "1.86.0"
 edition = "2024"
 license = "MIT"
 description = "Automates upgrades and pulls remote databases, files, and firmware for the Flipper Zero :kekw:"
+repository = "https://github.com/elijah629/flippy"
+documentation = "https://docs.rs/flippy"
 
 [dependencies]
 # Errors & logging
@@ -49,8 +51,7 @@ url = { version = "2.5.4", features = ["serde"] }
 uuid = { version = "1.17.0", features = ["v5", "serde"] }
 
 # Parsing firmware update directory servers
-reqwest = { version = "0.12.19", default-features = false, features = [ "rustls-tls" ] }
-serde_json = "1.0.140"
+reqwest = { version = "0.12.19", default-features = false, features = [ "rustls-tls", "json", "stream" ] }
 
 # Async
 tokio = { version = "1.45.1", features = ["full"] }
@@ -58,12 +59,17 @@ tokio = { version = "1.45.1", features = ["full"] }
 # Pretty times
 jiff = "0.2.15"
 
-# Calculate MD5 hashes for trees
+# Calculate MD5 hashes for trees and files
 md5 = "0.7.0"
+hex = "0.4.3"
 
 # Diff trees
 fxhash = "0.2.1"
 hyperloglockless = "0.1.0"
+futures-util = "0.3.31"
+tar = "0.4.44"
+flate2 = "1.1.2"
+sha2 = "0.10.9"
 
 # TODO: Remove when gix fixes prodash version
 [patch.crates-io]

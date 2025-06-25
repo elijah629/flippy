@@ -5,7 +5,11 @@ use tokio::fs;
 use tracing::{Level, error};
 use types::flip::Flip;
 
+use crate::art::{FLIPPY, get_art};
+
+mod art;
 mod commands;
+mod flipper;
 mod git;
 mod progress;
 mod types;
@@ -17,7 +21,7 @@ mod walking_diff;
 #[command(
     name = "flippy",
     version,
-    about = "Automates upgrades and pulls remote databases, files, and firmware for the Flipper Zero :kekw:",
+    about = format!("{FLIPPY}Automates upgrades and pulls remote databases, files, and firmware for the Flipper Zero :kekw:"),
     propagate_version = true,
     subcommand_required = true
 )]
@@ -154,7 +158,8 @@ async fn main() -> Result<()> {
     init_logging(cli.verbose);
 
     if let Err(err) = run(cli).await {
-        error!("{:#}", err);
+        error!("{}", get_art());
+        error!("{}", err);
         std::process::exit(1);
     }
     Ok(())

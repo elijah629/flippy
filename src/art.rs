@@ -1,0 +1,75 @@
+//! Helper module for all sorts of fun art-related things for flippy!
+
+use std::time::{SystemTime, UNIX_EPOCH};
+
+pub const FLIPPY: &str = r#"
+    ________   __        _________  ________  ________  __  __
+   / _______/ / /       /___  ___/ /   ₀   / /   ₀   / / / / /
+  / /______  / /          / /     / ______/ / ______/ / /_/ /
+ / _______/ / /_____  ___/ /___  / /       / /        \__, /
+/_/        /_______/ /________/ /_/       /_/        /____/
+"#;
+
+const ERROR_WALLS: [&str; 5] = [
+    r#"
+           __..--''``---....___   _..._    __
+ /// //_.-'    .-/";  `        ``<._  ``.''_ `. / // /
+///_.-' _..--.'_    \                    `( ) ) // //
+/ (_..-' // (< _     ;_..__               ; `' / ///
+ / // // //  `-._,_)' // / ``--...____..-' /// / //
+       assert_eq!(self.sound, Sound::MEOW)
+"#,
+    r#"
+
+                              .ccccc.
+                         .cc;'coooxkl;.
+                     .:c:::c:,,,,,;c;;,.'.
+                   .clc,',:,..:xxocc;'..c;
+                  .c:,';:ox:..:c,,,,,,...cd,
+                .c:'.,oxxxxl::l:.,loll;..;ol.
+                ;Oc..:xxxxxxxxx:.,llll,....oc
+             .,;,',:loxxxxxxxxx:.,llll;.,,.'ld,
+            .lo;..:xxxxxxxxxxxx:.'cllc,.:l:'cO;
+           .:;...'cxxxxxxxxxxxxoc;,::,..cdl;;l'
+         .cl;':,'';oxxxxxxdxxxxxx:....,cooc,cO;
+     .,,,::;,lxoc:,,:lxxxxxxxxxxxo:,,;lxxl;'oNc
+   .cdxo;':lxxxxxxc'';cccccoxxxxxxxxxxxxo,.;lc.
+  .loc'.'lxxxxxxxxocc;''''';ccoxxxxxxxxx:..oc
+olc,..',:cccccccccccc:;;;;;;;;:ccccccccc,.'c,
+Ol;......................................;l'
+               PARTY OR DIE"#,
+    r#"
+                                  __
+                               _.-~  )
+                    _..--~~~~,'   ,-/     _
+                 .-'. . . .'   ,-','    ,' )
+               ,'. . . _   ,--~,-'__..-'  ,'
+             ,'. . .  (@)' ---~~~~      ,'
+            /. . . . '~~             ,-'
+           /. . . . .             ,-'
+          ; . . . .  - .        ,'
+         : . . . .       _     /
+        . . . . .          `-.:
+       . . . ./  - .          )
+      .  . . |  _____..---.._/ ____ I AM NOT A FLIPPER _
+~---~~~~----~~~~             ~~
+"#,
+    r#"
+    ___
+ __/_  `.  .-"""-.
+ \_,` | \-'  /   )`-')
+  "") `"`    \  ((`"`
+ ___Y  ,    .'7 /|
+(_,___/...-` (_/_/ sk
+         WOOF
+"#,
+    r#"(╯°□°)╯︵ яoяяƎ"#,
+];
+
+pub fn get_art() -> &'static str {
+    let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let nanos = time.subsec_millis() as usize;
+    let n = (nanos % ERROR_WALLS.len() - 1) + 1;
+
+    ERROR_WALLS[n]
+}

@@ -1,7 +1,10 @@
-use std::fmt::Display;
+use std::{fmt::Display, path::Path};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
+use reqwest::header::CONTENT_LENGTH;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
+use tokio::io::AsyncWriteExt;
 use url::Url;
 
 use crate::progress::progress;
@@ -79,6 +82,75 @@ pub struct File {
     pub sha256: String,
 }
 
+impl File {
+    pub async fn download(&self, out: impl AsRef<Path>) -> Result<()> {
+        use futures_util::StreamExt;
+        use std::str::FromStr;
+
+        let (progress, handle) = progress();
+
+        let item = progress.add_child("downloading firmware .tgz");
+        let client = reqwest::Client::new();
+        let url = self.url.as_str();
+        let response = client.head(url).send().await?;
+
+        let length = response
+            .headers()
+            .get(CONTENT_LENGTH)
+            .context("response doesn't include the content length")?;
+
+        let length = u64::from_str(length.to_str().context("Invalid Content-Length header")?)?;
+
+        let mut stream = client.get(url).send().await?.bytes_stream();
+
+        item.init(
+            Some(length as usize),
+            Some(prodash::unit::dynamic_and_mode(
+                prodash::unit::Bytes,
+                prodash::unit::display::Mode::with_throughput(),
+            )),
+        );
+
+        let mut file = tokio::fs::File::create(out).await?;
+        let mut hasher = Sha256::new();
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            item.inc_by(chunk.len());
+            file.write_all(&chunk).await?;
+            hasher.update(&chunk);
+        }
+
+        let actual = hex::encode(hasher.finalize());
+
+        if actual != self.sha256 {
+            bail!("hash mismatch, expected {}, got {actual}", self.sha256);
+        }
+
+        handle.shutdown_and_wait();
+
+        Ok(())
+        /*
+        println!("{response:?}");
+        let length = response.content_length().map(|x| x as usize);
+
+
+        let mut buffer = Vec::with_capacity(length.expect("Cannot find content length!"));
+        while let Some(bytes_read) = response.().await? {
+            buffer.extend_from_slice(&bytes_read.slice(..bytes_read.len()));
+
+            item.inc_by(bytes_read.len());
+        }
+
+        item.done("Fetched directory");
+
+
+        let json = serde_json::from_slice(&buffer)?;
+
+        Ok(json)*/
+    }
+}
+
 impl Display for File {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{:-^40}", "Firmware file")?;
@@ -123,25 +195,26 @@ pub enum Target {
 
 impl Directory {
     pub async fn fetch(url: Url) -> Result<Self> {
-        let (progress, handle) = progress();
+        //let (progress, handle) = progress();
 
-        let mut item = progress.add_child("fetching directory");
+        //let mut item = progress.add_child("fetching directory");
 
-        let mut response = reqwest::get(url).await?;
-        let length = response
-            .content_length()
-            .context("could not extract content length")?;
+        let response = reqwest::get(url).await?.json().await?;
+        Ok(response)
+        /*
+        println!("{response:?}");
+        let length = response.content_length().map(|x| x as usize);
 
         item.init(
-            response.content_length().map(|x| x as usize),
+            length,
             Some(prodash::unit::dynamic_and_mode(
                 prodash::unit::Bytes,
                 prodash::unit::display::Mode::with_throughput(),
             )),
         );
 
-        let mut buffer = Vec::with_capacity(length as usize);
-        while let Some(bytes_read) = response.chunk().await? {
+        let mut buffer = Vec::with_capacity(length.expect("Cannot find content length!"));
+        while let Some(bytes_read) = response.().await? {
             buffer.extend_from_slice(&bytes_read.slice(..bytes_read.len()));
 
             item.inc_by(bytes_read.len());
@@ -153,7 +226,7 @@ impl Directory {
 
         let json = serde_json::from_slice(&buffer)?;
 
-        Ok(json)
+        Ok(json)*/
     }
 
     pub fn channel_latest_version(&self, channel: &Id) -> Option<&Version> {

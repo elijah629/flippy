@@ -81,9 +81,7 @@ impl Firmware {
             Firmware::Official(ch) | Firmware::Unleashed(ch) | Firmware::Momentum(ch) => {
                 let base =
                     Url::parse(self.get_directory()).context("parsing base directory URL")?;
-                let dir = Directory::fetch(base)
-                    .await
-                    .context("fetching directory listing")?;
+                let dir = Directory::fetch(base).await?;
                 let ver = dir
                     .channel_latest_version(ch)
                     .cloned()

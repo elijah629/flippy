@@ -1,6 +1,6 @@
+use crate::flipper::pick_cli;
 use crate::{
-    commands::upload::{diff::diff_all_repositories, flipper::pick_cli},
-    types::remote_sync_file::SYNC_FILE_PATH,
+    commands::upload::diff::diff_all_repositories, types::remote_sync_file::SYNC_FILE_PATH,
 };
 use crate::{
     types::{flip::Flip, remote_sync_file::SyncFile},
@@ -18,7 +18,6 @@ use tokio::fs;
 use tracing::{info, warn};
 
 mod diff;
-mod flipper;
 mod pathspec;
 
 pub async fn run(flip: Flip, force_walkdir: bool) -> Result<()> {

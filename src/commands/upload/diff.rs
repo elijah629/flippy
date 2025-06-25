@@ -203,7 +203,7 @@ fn walking_diff<P: AsRef<Path> + Sync>(
                 let local = std::fs::read(join_as_relative(local, path))?;
                 let local_hash = md5::compute(local);
 
-                let local_hash = format!("{local_hash:x}");
+                let local_hash = hex::encode(*local_hash);
                 let remote_hash = cli.fs_md5(join_as_relative(remote, path))?;
 
                 // TODO: Cache results into the store somehow
