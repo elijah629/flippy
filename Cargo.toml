@@ -1,6 +1,6 @@
 [package]
 name = "flippy"
-version = "0.2.3"
+version = "0.2.4"
 rust-version = "1.86.0"
 edition = "2024"
 license = "MIT"
@@ -19,7 +19,7 @@ clap = { version = "4.5.39", features = ["derive"] }
 cliclack = { version = "0.3.6", default-features = false }
 
 # Flipper
-flipper-rpc = { version = "0.6.2", features = ["fs-all", "tracing", "transport-serial-optimized", "transport-serial-optimized-large-stack-limit"] }
+flipper-rpc = { version = "0.8.0", features = ["fs-all", "fs-progress-mpsc", "tracing", "transport-serial-optimized", "transport-serial-optimized-large-stack-limit"] }
 
 # Git (gix)
 gix = { version = "0.72.1", features = [

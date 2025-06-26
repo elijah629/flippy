@@ -4,7 +4,6 @@ use crate::commands::upload::Path;
 use crate::commands::upload::SerialRpcTransport;
 use crate::commands::upload::bail;
 use crate::commands::upload::info;
-use crate::commands::upload::join_as_relative;
 use crate::commands::upload::open;
 use crate::commands::upload::pathspec::pathspec_from_pattern;
 use crate::git::diff::diff_from_head;
@@ -139,21 +138,36 @@ fn git_diff(remote_commit: Commit<'_>, ops: &mut Vec<Op>, search: &mut Pathspec)
                         return None;
                     }
                     println!("{:?}", relation);
-                    Some(Op::Copy(PathBuf::from(location)))
+                    Some(Op::Copy(
+                        PathBuf::from(location)
+                            .strip_prefix("/")
+                            .unwrap()
+                            .to_path_buf(),
+                    ))
                 }
                 gix::diff::tree_with_rewrites::Change::Deletion { location, .. } => {
                     let location = location.to_str().unwrap();
                     if !search.is_included(location, Some(false)) {
                         return None;
                     }
-                    Some(Op::Remove(PathBuf::from(location)))
+                    Some(Op::Remove(
+                        PathBuf::from(location)
+                            .strip_prefix("/")
+                            .unwrap()
+                            .to_path_buf(),
+                    ))
                 }
                 gix::diff::tree_with_rewrites::Change::Modification { location, .. } => {
                     let location = location.to_str().unwrap();
                     if !search.is_included(location, Some(false)) {
                         return None;
                     }
-                    Some(Op::Copy(PathBuf::from(location)))
+                    Some(Op::Copy(
+                        PathBuf::from(location)
+                            .strip_prefix("/")
+                            .unwrap()
+                            .to_path_buf(),
+                    ))
                 }
                 /*gix::diff::tree_with_rewrites::Change::Rewrite {
                     source_location,
@@ -198,13 +212,16 @@ fn walking_diff<P: AsRef<Path> + Sync>(
         &local_tree,
         &remote_tree,
         ops,
+        // TODO: Cache MD5's for directories. Use read_dir instead, HOW: Pass parent index into
+        // this function and build a hashmap here.
         |path, local_size, remote_size| {
             Ok(local_size != remote_size || {
-                let local = std::fs::read(join_as_relative(local, path))?;
+                let path = path.strip_prefix("/")?;
+                let local = std::fs::read(local.join(path))?;
                 let local_hash = md5::compute(local);
 
                 let local_hash = hex::encode(*local_hash);
-                let remote_hash = cli.fs_md5(join_as_relative(remote, path))?;
+                let remote_hash = cli.fs_md5(remote.join(path))?;
 
                 // TODO: Cache results into the store somehow
                 let diff = remote_hash != local_hash;

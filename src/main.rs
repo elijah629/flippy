@@ -133,8 +133,8 @@ enum FirmwareCommand {
         path: PathBuf,
     },
 
-    /// Pull current firmware into the store
-    Pull {
+    /// Pulls the current firmware into the store, then puts it onto the flipper and updates it.
+    Update {
         /// Path of project
         #[arg(value_parser, default_value = ".")]
         path: PathBuf,
@@ -160,7 +160,8 @@ async fn main() -> Result<()> {
     if let Err(err) = run(cli).await {
         error!("{}", get_art());
         error!("{}", err);
-        std::process::exit(1);
+
+        return Err(err);
     }
     Ok(())
 }
@@ -205,10 +206,10 @@ async fn run(cli: Cli) -> Result<()> {
 
                 commands::firmware::set(flip, firmware).await?;
             }
-            FirmwareCommand::Pull { path } => {
+            FirmwareCommand::Update { path } => {
                 let flip = try_flip_from_path(&path).await?;
 
-                commands::firmware::pull(flip).await?;
+                commands::firmware::update(flip).await?;
             }
         },
 
