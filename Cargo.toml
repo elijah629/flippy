@@ -19,7 +19,7 @@ clap = { version = "4.5.39", features = ["derive"] }
 cliclack = { version = "0.3.6", default-features = false }
 
 # Flipper
-flipper-rpc = { version = "0.8.0", features = ["fs-all", "fs-progress-mpsc", "tracing", "transport-serial-optimized", "transport-serial-optimized-large-stack-limit"] }
+flipper-rpc = { version = "0.9.1", features = ["fs-all", "fs-progress-mpsc", "tracing", "transport-serial-optimized", "transport-serial-optimized-large-stack-limit"] }
 
 # Git (gix)
 gix = { version = "0.72.1", features = [
@@ -60,7 +60,7 @@ tokio = { version = "1.45.1", features = ["full"] }
 jiff = "0.2.15"
 
 # Calculate MD5 hashes for trees and files
-md5 = "0.7.0"
+md5 = "0.8.0"
 hex = "0.4.3"
 
 # Diff trees
@@ -70,6 +70,7 @@ futures-util = "0.3.31"
 tar = "0.4.44"
 flate2 = "1.1.2"
 sha2 = "0.10.9"
+owo-colors = "4.2.2"
 
 # TODO: Remove when gix fixes prodash version
 [patch.crates-io]

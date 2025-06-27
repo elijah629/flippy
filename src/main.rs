@@ -149,6 +149,13 @@ enum StoreCommand {
         #[arg(value_parser, default_value = ".")]
         path: PathBuf,
     },
+
+    /// Deletes the store and everything inside of it
+    Clean {
+        /// Path of project
+        #[arg(value_parser, default_value = ".")]
+        path: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -161,7 +168,7 @@ async fn main() -> Result<()> {
         error!("{}", get_art());
         error!("{}", err);
 
-        return Err(err);
+        std::process::exit(1);
     }
     Ok(())
 }
@@ -218,6 +225,11 @@ async fn run(cli: Cli) -> Result<()> {
                 let flip = try_flip_from_path(&path).await?;
 
                 commands::store::fetch(flip).await?;
+            }
+            StoreCommand::Clean { path } => {
+                let flip = try_flip_from_path(&path).await?;
+
+                commands::store::clean(flip).await?;
             }
         },
     }

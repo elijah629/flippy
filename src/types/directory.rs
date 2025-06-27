@@ -1,10 +1,11 @@
 use std::{fmt::Display, path::Path};
 
 use anyhow::{Context, Result, bail};
+use owo_colors::OwoColorize;
 use reqwest::header::CONTENT_LENGTH;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, BufWriter};
 use url::Url;
 
 use crate::progress::progress;
@@ -44,28 +45,34 @@ impl Version {
 
 impl Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Version: {}", self.version)?;
         writeln!(
             f,
-            "Released on: {}",
-            jiff::Timestamp::from_second(self.timestamp as i64)
-                .expect("timestamp could not be parsed")
+            "{} {}",
+            "Version:".bold().blue(),
+            self.version.bold().yellow()
         )?;
 
-        let len = self.changelog.len();
+        let ts = jiff::Timestamp::from_second(self.timestamp as i64)
+            .map(|t| t.to_string())
+            .unwrap_or_else(|_| "Invalid timestamp".to_string());
+
+        writeln!(f, "{} {}", "Released on:".bold().blue(), ts.bright_black())?;
+
+        writeln!(f)?;
+        writeln!(f, "{}", "Changelog".bold().blue().underline())?;
 
         const MAX_LINES: usize = 10;
-        writeln!(f, "{:-^40}", " Changelog ")?;
-        if len > MAX_LINES {
-            let lines = self.changelog.lines().take(10);
+        let lines: Vec<&str> = self.changelog.lines().collect();
 
-            for line in lines {
-                writeln!(f, "{}", line)?;
+        if lines.len() > MAX_LINES {
+            for line in &lines[..MAX_LINES] {
+                writeln!(f, "{}", line.bright_white())?;
             }
-
-            writeln!(f, "...")?;
+            writeln!(f, "{}", "...".bright_black())?;
         } else {
-            writeln!(f, "{}", self.changelog)?;
+            for line in lines {
+                writeln!(f, "{}", line.bright_white())?;
+            }
         }
 
         Ok(())
@@ -83,24 +90,25 @@ pub struct File {
 }
 
 impl File {
-    pub async fn download(&self, out: impl AsRef<Path>) -> Result<()> {
+    pub async fn download(url: &Url, sha256: Option<&str>, out: impl AsRef<Path>) -> Result<()> {
         use futures_util::StreamExt;
         use std::str::FromStr;
 
         let (progress, handle) = progress();
-
         let item = progress.add_child("downloading firmware .tgz");
-        let client = reqwest::Client::new();
-        let url = self.url.as_str();
-        let response = client.head(url).send().await?;
 
+        let client = reqwest::Client::new();
+        let url = url.as_str();
+
+        // Fetch content length for progress and preallocation
+        let response = client.head(url).send().await?;
         let length = response
             .headers()
             .get(CONTENT_LENGTH)
             .context("response doesn't include the content length")?;
-
         let length = u64::from_str(length.to_str().context("Invalid Content-Length header")?)?;
 
+        // Start download
         let mut stream = client.get(url).send().await?.bytes_stream();
 
         item.init(
@@ -111,53 +119,68 @@ impl File {
             )),
         );
 
-        let mut file = tokio::fs::File::create(out).await?;
+        let file = tokio::fs::File::create(&out).await?;
+        file.set_len(length).await?; // Pre-allocate the full file
+        let mut file = BufWriter::new(file);
         let mut hasher = Sha256::new();
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
             item.inc_by(chunk.len());
-            file.write_all(&chunk).await?;
             hasher.update(&chunk);
+            file.write_all(&chunk).await?;
         }
 
-        let actual = hex::encode(hasher.finalize());
+        file.flush().await?;
 
-        if actual != self.sha256 {
-            bail!("hash mismatch, expected {}, got {actual}", self.sha256);
+        if let Some(sha256) = sha256 {
+            let actual = hex::encode(hasher.finalize());
+
+            if actual != sha256 {
+                bail!("hash mismatch, expected {}, got {actual}", sha256);
+            }
         }
 
         handle.shutdown_and_wait();
-
         Ok(())
-        /*
-        println!("{response:?}");
-        let length = response.content_length().map(|x| x as usize);
-
-
-        let mut buffer = Vec::with_capacity(length.expect("Cannot find content length!"));
-        while let Some(bytes_read) = response.().await? {
-            buffer.extend_from_slice(&bytes_read.slice(..bytes_read.len()));
-
-            item.inc_by(bytes_read.len());
-        }
-
-        item.done("Fetched directory");
-
-
-        let json = serde_json::from_slice(&buffer)?;
-
-        Ok(json)*/
     }
 }
 
 impl Display for File {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{:-^40}", "Firmware file")?;
-        writeln!(f, "url: {}", self.url)?;
-        writeln!(f, "sha256-{}", self.sha256)?;
-
+        writeln!(f, "\n{}", "Firmware File".bold().green().underline())?;
+        writeln!(
+            f,
+            "{} {}",
+            "Type:".bold().green(),
+            self.file_type.bright_white()
+        )?;
+        writeln!(f, "{} {}", "Target:".bold().green(), self.target)?;
+        writeln!(
+            f,
+            "{} {}",
+            "URL:".bold().green(),
+            self.url.to_string().cyan()
+        )?;
+        writeln!(
+            f,
+            "{} {}",
+            "SHA256:".bold().green(),
+            self.sha256.bright_black()
+        )?;
         Ok(())
+    }
+}
+
+impl Display for Target {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Target::F7 => "f7",
+            Target::F18 => "f18",
+            Target::Any => "any",
+        };
+        write!(f, "{}", s.bright_white())
     }
 }
 
@@ -195,6 +218,9 @@ pub enum Target {
 
 impl Directory {
     pub async fn fetch(url: Url) -> Result<Self> {
+        // No point in progress, it is too fast for it to even be visible
+        // Might want to add it if slow wifi is a real concern
+
         //let (progress, handle) = progress();
 
         //let mut item = progress.add_child("fetching directory");

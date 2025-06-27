@@ -1,4 +1,5 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
+use cliclack::confirm;
 use gix::open;
 use tokio::fs;
 
@@ -34,5 +35,20 @@ pub async fn fetch(flip: Flip) -> Result<()> {
     }
 
     handle.shutdown_and_wait();
+    Ok(())
+}
+
+pub async fn clean(flip: Flip) -> Result<()> {
+    let path = flip.source_path;
+
+    if !confirm("Delete all store items? This includes repos, firmware, caches, ...etc.")
+        .interact()?
+    {
+        bail!("Aborted");
+    }
+
+    tokio::fs::remove_dir_all(path.join("store")).await?;
+    tokio::fs::create_dir(path.join("store")).await?;
+
     Ok(())
 }

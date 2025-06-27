@@ -169,20 +169,6 @@ fn git_diff(remote_commit: Commit<'_>, ops: &mut Vec<Op>, search: &mut Pathspec)
                             .to_path_buf(),
                     ))
                 }
-                /*gix::diff::tree_with_rewrites::Change::Rewrite {
-                    source_location,
-                    source_entry_mode,
-                    source_relation,
-                    source_id,
-                    diff,
-                    entry_mode,
-                    id,
-                    location,
-                    relation,
-                    copy,
-                } => {
-
-                },*/
                 _ => unreachable!("rewrites are disabled"),
             }),
     );

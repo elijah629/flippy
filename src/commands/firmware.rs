@@ -2,23 +2,27 @@ use std::{
     io::{Cursor, Read},
     path::{Path, PathBuf},
     sync::mpsc::channel,
-    time::Instant,
 };
 
 use crate::{
     flipper::pick_cli,
-    types::{firmware::Firmware, flip::Flip},
+    progress::progress,
+    types::{directory::File, firmware::Firmware, flip::Flip},
 };
-use anyhow::{Context, bail};
+use anyhow::bail;
 use cliclack::confirm;
 use flate2::read::GzDecoder;
-use flipper_rpc::fs::{FsCreateDir, FsRemove, FsTarExtract, FsWrite};
+use flipper_rpc::{
+    fs::{FsCreateDir, FsRemove, FsWrite, helpers::os_str_to_str},
+    proto::system::{UpdateRequest, reboot_request::RebootMode},
+    rpc::req::Request,
+    transport::Transport,
+};
 use serde::{
     Deserialize,
     de::{self, IntoDeserializer, value::StringDeserializer},
 };
 use tar::Archive;
-use tokio::io::AsyncReadExt;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -32,13 +36,30 @@ pub async fn set(mut flip: Flip, firmware: String) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Overview of what the update operation looks like:
+/// - Fetch ,tgz
+/// - Extract it
+/// - Put all of it's files inside of /ext/update/xxx
+/// - Run Update on /ext/update/xxx/update.fuf
+/// - Reboot into update mode
 pub async fn update(flip: Flip) -> anyhow::Result<()> {
     let firmware = flip.firmware;
 
-    let version = firmware.fetch_manifest().await?;
-    let firmware_file = version.latest_tgz()?;
+    let (url, sha265) = match firmware {
+        Firmware::Custom(url) => (url.parse()?, None),
+        _ => {
+            let version = firmware.fetch_manifest().await?;
+            let firmware_file = version.latest_tgz()?;
 
-    let url = &firmware_file.url;
+            println!("{version}");
+            println!("{firmware_file}");
+
+            (
+                firmware_file.url.clone(),
+                Some(firmware_file.sha256.clone()),
+            )
+        }
+    };
 
     let store_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_str().as_bytes());
     let store_path = flip.source_path.join("store").join(store_id.to_string());
@@ -53,17 +74,12 @@ pub async fn update(flip: Flip) -> anyhow::Result<()> {
         warn!("This firmware version has already been pulled locally, keeping.");
         //tokio::fs::remove_dir_all(&store_path).await?;
     } else {
-        info!("Fetched version info");
-
-        println!("{version}");
-        println!("{firmware_file}");
-
         if !confirm("OK to download?").interact()? {
             bail!("Aborted");
         }
 
         tokio::fs::create_dir(&store_path).await?;
-        firmware_file.download(&tgz_path).await?;
+        File::download(&url, sha265.as_deref(), &tgz_path).await?;
     }
 
     let mut tar_gz = std::fs::File::open(&tgz_path)?;
@@ -72,88 +88,74 @@ pub async fn update(flip: Flip) -> anyhow::Result<()> {
     tar_gz.read_to_end(&mut buf)?;
     let reader = Cursor::new(&buf);
 
+    let (progress, handle) = progress();
+
     let tar = GzDecoder::new(reader);
     let mut archive = Archive::new(tar);
-    let update_name = archive
-        .entries()?
-        .next()
-        .context("Invalid .tgz, no items")??;
-    let update_name = update_name.path()?;
-    let update_dir = Path::new("/ext/update")
-        .join(update_name)
-        .components()
-        .collect::<PathBuf>();
 
     let mut cli = pick_cli()?;
 
-    let tgz_path = update_dir.join(tgz_name);
-    /* cli.fs_create_dir(&update_dir)?;
+    cli.fs_create_dir("/ext/update")?;
+    let mut base = None;
 
-
-    let (tx, rx) = channel();
-
-    let handle = std::thread::spawn(move || {
-        let start = Instant::now();
-        for (sent, total) in rx {
-            println!("[+{:.2?}] Progress: {}/{}", start.elapsed(), sent, total);
-        }
-    });
-
-    println!("{tgz_path:?}");
-    cli.fs_write(&tgz_path, buf, Some(tx))?;
-
-    handle.join().unwrap();*/
-
-    //    println!("{update_dir:?}");
-    //cli.fs_extract_tgz(&tgz_path, update_dir.join("a"))?;
-
-    // println!("{tgz_path:?}");
-    //cli.fs_remove(&tgz_path, false)?;
-    //cli.fs_create_dir(update_dir)?;
-
-    /*  for file in archive.entries()? {
-        let mut file = file?;
-        let path = file.path()?;
-        // If the last char is a `/`, it is a dir. / == 47
-        let is_dir = file.path_bytes().last() == Some(&47);
-        let out_path = PathBuf::from("/ext/update").join(path);
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let header = entry.header();
+        let is_dir = header.entry_type().is_dir();
+        let path = Path::new("/ext/update").join(entry.path()?.components().collect::<PathBuf>());
 
         if is_dir {
-            let out_path = out_path.to_str().unwrap().strip_suffix("/").unwrap();
-            cli.fs_create_dir(out_path)?;
+            let existed = cli.fs_create_dir(&path)?;
+            if existed {
+                cli.fs_remove(&path, true)?;
+                cli.fs_create_dir(&path)?;
+            }
+            base = Some(path);
         } else {
-            let mut buf = vec![];
-            file.read_to_end(&mut buf)?;
+            let item = progress.add_child(os_str_to_str(path.file_name().unwrap())?);
+            let size = entry.size() as usize;
 
-            cli.fs_write(out_path, buf)?;
+            item.init(
+                Some(size),
+                Some(prodash::unit::dynamic_and_mode(
+                    prodash::unit::Bytes,
+                    prodash::unit::display::Mode::with_throughput(),
+                )),
+            );
+
+            let mut buf = vec![0u8; size];
+            entry.read_exact(&mut buf)?;
+
+            let (tx, rx) = channel();
+
+            let handle = tokio::spawn(async move {
+                for sent in rx {
+                    item.set(sent);
+                }
+            });
+
+            cli.fs_write(path, &mut buf, Some(tx))?;
+
+            handle.await?;
         }
-    }*/
-    /*
-        *
-    Overview:
+    }
+    handle.shutdown_and_wait();
 
-    Put files in /ext/update/name-of-update
-    UPDATE(Manifest.fuf)
-    REboot(Mode::Update)
+    if !confirm("OK to Update? This will restart the flipper.").interact()? {
+        bail!("Aborted");
+    }
 
-    (i think)
-        */
+    let manifest = os_str_to_str(base.unwrap().join("update.fuf").as_os_str())?.to_string();
 
-    /*  for entry in to_copy {
-        let entry = entry?;
+    cli.send_and_receive(Request::SystemUpdate(UpdateRequest {
+        update_manifest: manifest,
+    }))?;
 
-        let path = entry.path()?;
-        println!("{path:?}");
+    cli.send(Request::Reboot(RebootMode::Update))?; // Dont recieve cuz the device just got nuked
 
-        //cli.fs_write(path, data);
-        //entry
-
-        // cli.fs_write(path, data)
-    }*/
-
-    /*cli.send_and_receive(flipper_rpc::rpc::req::Request::SystemUpdate(UpdateRequest {
-        update_manifest: ""
-    });*/
+    info!(
+        "Flipper has been rebooted into update mode, please wait for the device to power back on before attempting further modifications."
+    );
 
     Ok(())
 }
