@@ -19,7 +19,8 @@ where
         .connect(gix::remote::Direction::Fetch)?
         .prepare_fetch(&mut progress, Default::default())?
         //.with_shallow(gix::remote::fetch::Shallow::DepthAtRemote(1.try_into()?)) Cannot shallow
-        //clone due to remote diffing on the upload command
+        //clone due to deep remote diffing on the upload command. This also does not save
+        //much data on UberGuidoZ/Flipper
         .receive(&mut progress, &gix::interrupt::IS_INTERRUPTED)?;
 
     let ref_specs = remote.refspecs(gix::remote::Direction::Fetch);
@@ -130,17 +131,6 @@ where
             }
         }
 
-        /*        let out = "\t".to_string();
-        // write!(out, "\t")?;
-        match &mapping.remote {
-            gix::remote::fetch::refmap::Source::ObjectId(id) => {
-                out.push_str(&format!("{}", id.attach(repo).shorten_or_id()));
-            }
-            gix::remote::fetch::refmap::Source::Ref(r) => {
-                out.push_str(&git::remote::ref_to_string(r));
-            }
-        }*/
-
         let mode_and_type = update.type_change.map_or_else(
             || format!("{}", update.mode),
             |type_change| {
@@ -158,14 +148,6 @@ where
                 )
             },
         );
-
-        /*match edit {
-            Some(edit) => {
-                out.push_str(&format!(" -> {} [{mode_and_type}]", edit.name));
-            }
-            None => out.push_str(&format!("[{mode_and_type}]")),
-        };*/
-
         progress.info(format!(
             "\t{}{}",
             match &mapping.remote {

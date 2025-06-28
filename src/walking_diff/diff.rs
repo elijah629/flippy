@@ -15,13 +15,18 @@ pub enum Op {
     Remove(PathBuf),
 }
 
-pub fn diff<F>(local: &Tree, remote: &RemoteTree, ops: &mut Vec<Op>, different: F) -> Result<()>
-where
-    F: FnMut(&Path, Option<u32>, Option<u32>) -> Result<bool>,
-{
+pub trait DiffFn: FnMut(&Path, Option<u32>, usize, usize) -> Result<bool> {}
+impl<T> DiffFn for T where T: FnMut(&Path, Option<u32>, usize, usize) -> Result<bool> {}
+
+pub fn diff(
+    local: &Tree,
+    remote: &RemoteTree,
+    ops: &mut Vec<Op>,
+    different: impl DiffFn,
+) -> Result<()> {
     let matches = prune_pass(local, remote, ops)?;
     creation_pass(local, remote, ops)?;
-    update_pass(local, remote, matches, different, ops)?;
+    update_pass(local, matches, different, ops)?;
 
     Ok(())
 }
@@ -30,20 +35,22 @@ fn prune_pass(
     local: &Tree,
     remote: &RemoteTree,
     ops: &mut Vec<Op>,
-) -> Result<Vec<(PathBuf, usize, usize)>> {
+) -> Result<Vec<(PathBuf, usize, usize, usize)>> {
     let mut matched = Vec::new();
 
+    #[allow(clippy::too_many_arguments)]
     fn walk(
         local: &Tree,
         remote: &RemoteTree,
         local_idx: usize,
         remote_idx: usize,
+        remote_parent: usize,
         path: &Path,
         ops: &mut Vec<Op>,
-        matched: &mut Vec<(PathBuf, usize, usize)>,
+        matched: &mut Vec<(PathBuf, usize, usize, usize)>,
     ) -> Result<()> {
         // Record this node as unchanged
-        matched.push((path.to_path_buf(), local_idx, remote_idx));
+        matched.push((path.to_path_buf(), local_idx, remote_idx, remote_parent));
 
         let remote_node = &remote.nodes[remote_idx];
         let local_node = &local.nodes[local_idx];
@@ -57,6 +64,7 @@ fn prune_pass(
                     remote,
                     l_child_idx,
                     r_child_idx,
+                    remote_idx,
                     &child_path,
                     ops,
                     matched,
@@ -71,7 +79,7 @@ fn prune_pass(
     }
 
     let root = PathBuf::from("/");
-    walk(local, remote, 0, 0, &root, ops, &mut matched)?;
+    walk(local, remote, 0, 0, 0, &root, ops, &mut matched)?;
     Ok(matched)
 }
 
@@ -146,21 +154,15 @@ fn creation_pass(local: &Tree, remote: &RemoteTree, ops: &mut Vec<Op>) -> Result
     Ok(())
 }
 
-fn update_pass<F>(
+fn update_pass(
     local: &Tree,
-    remote: &RemoteTree,
-    matched: Vec<(PathBuf, usize, usize)>,
-    mut different: F,
+    matched: Vec<(PathBuf, usize, usize, usize)>,
+    mut different: impl DiffFn,
     ops: &mut Vec<Op>,
-) -> Result<()>
-where
-    F: FnMut(&Path, Option<u32>, Option<u32>) -> Result<bool>,
-{
-    for (path, l_idx, r_idx) in matched {
+) -> Result<()> {
+    for (path, l_idx, r_idx, r_parent) in matched {
         let local_node = &local.nodes[l_idx];
-        if local_node.children.is_empty()
-            && different(&path, local_node.size, remote.nodes[r_idx].size)?
-        {
+        if local_node.children.is_empty() && different(&path, local_node.size, r_idx, r_parent)? {
             ops.push(Op::Copy(path.strip_prefix("/")?.to_path_buf()));
         }
     }

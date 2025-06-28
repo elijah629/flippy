@@ -17,6 +17,7 @@ pub async fn add(mut flip: Flip, url: Url, name: String) -> anyhow::Result<()> {
 
     let url = url.to_string();
     let data = url.as_bytes();
+    debug!("inserting repository into list, building UUID");
     let uuid = Uuid::new_v5(&Uuid::NAMESPACE_URL, data);
 
     debug!("Checking if repo already exists");
@@ -30,8 +31,7 @@ pub async fn add(mut flip: Flip, url: Url, name: String) -> anyhow::Result<()> {
         ));
     }
 
-    debug!("inserting repository into list, building UUIDv5");
-    info!("Successfully created repo {}", name);
+    info!(name, "Successfully created repo {}", name);
     flip.repositories.insert(
         name,
         Repository {

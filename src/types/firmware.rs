@@ -71,10 +71,6 @@ impl<'de> Deserialize<'de> for Firmware {
 impl Firmware {
     pub async fn fetch_manifest(&self) -> Result<Version> {
         match self {
-            /*Firmware::Custom(raw) => Ok((
-                None,
-                Url::parse(raw).with_context(|| format!("parsing custom URL `{}`", raw))?,
-            )),*/
             Firmware::Custom(_) => bail!("fetch_manifest called on a custom firmware variant"),
 
             // All published variants follow the same directory.json spec

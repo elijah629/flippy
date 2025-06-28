@@ -19,16 +19,18 @@ mod walking_diff;
 /// Flippy: Automates upgrades and pulls remote databases, files, and firmware for the Flipper Zero.
 #[derive(Parser, Debug)]
 #[command(
-    name = "flippy",
     version,
-    about = format!("{FLIPPY}Automates upgrades and pulls remote databases, files, and firmware for the Flipper Zero :kekw:"),
-    propagate_version = true,
+    about = format!("{FLIPPY}{}", env!("CARGO_PKG_DESCRIPTION")),
     subcommand_required = true
 )]
 struct Cli {
     /// Verbosity level (-v, -vv, -vvv)
     #[arg(short, long, action = ArgAction::Count)]
     verbose: u8,
+
+    /// Enables machine-readable JSON output
+    #[arg(short, long)]
+    json: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -162,7 +164,7 @@ enum StoreCommand {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    init_logging(cli.verbose);
+    init_logging(cli.verbose, cli.json);
 
     if let Err(err) = run(cli).await {
         error!("{}", get_art());
@@ -247,7 +249,7 @@ async fn try_flip_from_path(p: impl AsRef<Path>) -> Result<Flip> {
 }
 
 /// Initialize logging based on verbosity count
-fn init_logging(level: u8) {
+fn init_logging(level: u8, json: bool) {
     let level = match level {
         0 => Level::INFO,
         1 => Level::DEBUG,
@@ -255,22 +257,23 @@ fn init_logging(level: u8) {
         _ => Level::TRACE,
     };
 
-    let mut sub = tracing_subscriber::fmt()
-        .compact()
-        .with_max_level(level)
-        .with_target(true)
-        .with_thread_ids(false)
-        .with_thread_names(false)
-        .with_level(true)
-        .with_target(true)
-        .with_thread_ids(false)
-        .with_thread_names(false)
-        .without_time()
-        .with_target(true);
-
-    if level == Level::TRACE {
-        sub = sub.with_file(true).with_line_number(true);
-    }
-
-    sub.init();
+    if json {
+        tracing_subscriber::fmt().json().init();
+    } else {
+        tracing_subscriber::fmt()
+            .compact()
+            .with_max_level(level)
+            .with_target(true)
+            .with_thread_ids(false)
+            .with_thread_names(false)
+            .with_level(true)
+            .with_target(true)
+            .with_thread_ids(false)
+            .with_thread_names(false)
+            .without_time()
+            .with_target(true)
+            .with_file(level == Level::TRACE)
+            .with_line_number(level == Level::TRACE)
+            .init()
+    };
 }

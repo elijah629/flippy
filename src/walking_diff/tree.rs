@@ -27,7 +27,6 @@ pub struct Node {
     // CERTIAN that the node is a file.
     pub children: FxHashMap<Rc<OsStr>, usize>,
 
-    /// DO NOT USE THIS AS AN INDICATOR IFNODE IS A DIR/FILE IT IS WRONG
     pub size: Option<u32>,
 }
 
@@ -149,6 +148,10 @@ impl RemoteTree {
         Self {
             nodes: vec![RemoteNode::new("/", None)],
         }
+    }
+
+    pub fn find_child_by_name(&self, parent: usize, name: &OsStr) -> Option<&usize> {
+        self.nodes[parent].children.get(name)
     }
 
     // WARNING: THIS IS HIGHLY INNEFICIENT. It re-allocates data! :scared:

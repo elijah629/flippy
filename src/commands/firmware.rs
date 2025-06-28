@@ -72,7 +72,6 @@ pub async fn update(flip: Flip) -> anyhow::Result<()> {
 
     if tokio::fs::try_exists(&store_path).await? {
         warn!("This firmware version has already been pulled locally, keeping.");
-        //tokio::fs::remove_dir_all(&store_path).await?;
     } else {
         if !confirm("OK to download?").interact()? {
             bail!("Aborted");

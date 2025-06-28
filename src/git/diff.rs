@@ -13,7 +13,7 @@ pub fn diff_from_head(commit: Commit<'_>) -> Result<Vec<Change>> {
     let local_tree = repo.head_tree()?;
 
     let options = Options::default().with_rewrites(None); // Simpler logic when
-    // converting changes into operations
+    // converting changes into operations, it is also cheaper.
 
     /*options = *options.track_rewrites(Some(Rewrites {
         copies: Some(Copies {

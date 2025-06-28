@@ -2,13 +2,37 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub const FLIPPY: &str = r#"
-    ________   __        _________  ________  ________  __  __
+macro_rules! rgb_color {
+    ($r:expr, $g:expr, $b:expr, $text:expr) => {
+        concat!("\x1b[38;2;", $r, ";", $g, ";", $b, "m", $text)
+    };
+}
+
+macro_rules! reset {
+    ($text: expr) => {
+        concat!("\x1b[0m", $text)
+    };
+}
+
+pub const FLIPPY: &str = concat!(
+    rgb_color!(
+        0xFF,
+        0x82,
+        0x00,
+        r#"
+    _________  __        _________  ________  ________  __  __
    / _______/ / /       /___  ___/ /   ₀   / /   ₀   / / / / /
   / /______  / /          / /     / ______/ / ______/ / /_/ /
- / _______/ / /_____  ___/ /___  / /       / /        \__, /
-/_/        /_______/ /________/ /_/       /_/        /____/
-"#;
+ / _______/ / /_____  ___/ /___  / /       / / ______ \__, /
+/_/        /_______/ /________/ /_/       /_/ /___________/ v"#
+    ),
+    rgb_color!(0xA5, 0xF4, 0xBF, env!("CARGO_PKG_VERSION_MAJOR")),
+    reset!("."),
+    rgb_color!(0x98, 0xCE, 0xFF, env!("CARGO_PKG_VERSION_MINOR")),
+    reset!("."),
+    rgb_color!(0xFF, 0xF4, 0x93, env!("CARGO_PKG_VERSION_PATCH")),
+    reset!("\n\n"),
+);
 
 const ERROR_WALLS: [&str; 7] = [
     r#"

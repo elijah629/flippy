@@ -1,14 +1,12 @@
 use std::{fmt::Display, path::Path};
 
+use crate::progress::progress;
 use anyhow::{Context, Result, bail};
-use owo_colors::OwoColorize;
 use reqwest::header::CONTENT_LENGTH;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncWriteExt, BufWriter};
 use url::Url;
-
-use crate::progress::progress;
 
 pub const OFFICIAL_DIRECTORY: &str = "https://update.flipperzero.one/firmware/directory.json";
 pub const UNLEASHED_DIRECTORY: &str = "https://up.unleashedflip.com/directory.json";
@@ -22,8 +20,13 @@ pub struct Directory {
 #[derive(Deserialize, Debug, Clone)]
 pub struct Channel {
     pub id: Id,
+
+    #[allow(dead_code)]
     pub title: String,
+
+    #[allow(dead_code)]
     pub description: String,
+
     pub versions: Option<Vec<Version>>,
 }
 #[derive(Deserialize, Debug, Clone)]
@@ -45,33 +48,28 @@ impl Version {
 
 impl Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "{} {}",
-            "Version:".bold().blue(),
-            self.version.bold().yellow()
-        )?;
+        writeln!(f, "Version: {}", self.version)?;
 
         let ts = jiff::Timestamp::from_second(self.timestamp as i64)
             .map(|t| t.to_string())
             .unwrap_or_else(|_| "Invalid timestamp".to_string());
 
-        writeln!(f, "{} {}", "Released on:".bold().blue(), ts.bright_black())?;
+        writeln!(f, "Released on: {}", ts)?;
 
         writeln!(f)?;
-        writeln!(f, "{}", "Changelog".bold().blue().underline())?;
+        writeln!(f, "Changelog")?;
 
         const MAX_LINES: usize = 10;
         let lines: Vec<&str> = self.changelog.lines().collect();
 
         if lines.len() > MAX_LINES {
             for line in &lines[..MAX_LINES] {
-                writeln!(f, "{}", line.bright_white())?;
+                writeln!(f, "{}", line)?;
             }
-            writeln!(f, "{}", "...".bright_black())?;
+            writeln!(f, "...")?;
         } else {
             for line in lines {
-                writeln!(f, "{}", line.bright_white())?;
+                writeln!(f, "{}", line)?;
             }
         }
 
@@ -149,26 +147,11 @@ impl File {
 impl Display for File {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{:-^40}", "Firmware file")?;
-        writeln!(f, "\n{}", "Firmware File".bold().green().underline())?;
-        writeln!(
-            f,
-            "{} {}",
-            "Type:".bold().green(),
-            self.file_type.bright_white()
-        )?;
-        writeln!(f, "{} {}", "Target:".bold().green(), self.target)?;
-        writeln!(
-            f,
-            "{} {}",
-            "URL:".bold().green(),
-            self.url.to_string().cyan()
-        )?;
-        writeln!(
-            f,
-            "{} {}",
-            "SHA256:".bold().green(),
-            self.sha256.bright_black()
-        )?;
+        writeln!(f, "\nFirmware File")?;
+        writeln!(f, "Type: {}", self.file_type)?;
+        writeln!(f, "Target: {}", self.target)?;
+        writeln!(f, "URL: {}", self.url)?;
+        writeln!(f, "Sha256: {}", self.sha256)?;
         Ok(())
     }
 }
@@ -180,7 +163,7 @@ impl Display for Target {
             Target::F18 => "f18",
             Target::Any => "any",
         };
-        write!(f, "{}", s.bright_white())
+        write!(f, "{}", s)
     }
 }
 
@@ -218,41 +201,8 @@ pub enum Target {
 
 impl Directory {
     pub async fn fetch(url: Url) -> Result<Self> {
-        // No point in progress, it is too fast for it to even be visible
-        // Might want to add it if slow wifi is a real concern
-
-        //let (progress, handle) = progress();
-
-        //let mut item = progress.add_child("fetching directory");
-
         let response = reqwest::get(url).await?.json().await?;
         Ok(response)
-        /*
-        println!("{response:?}");
-        let length = response.content_length().map(|x| x as usize);
-
-        item.init(
-            length,
-            Some(prodash::unit::dynamic_and_mode(
-                prodash::unit::Bytes,
-                prodash::unit::display::Mode::with_throughput(),
-            )),
-        );
-
-        let mut buffer = Vec::with_capacity(length.expect("Cannot find content length!"));
-        while let Some(bytes_read) = response.().await? {
-            buffer.extend_from_slice(&bytes_read.slice(..bytes_read.len()));
-
-            item.inc_by(bytes_read.len());
-        }
-
-        item.done("Fetched directory");
-
-        handle.shutdown_and_wait();
-
-        let json = serde_json::from_slice(&buffer)?;
-
-        Ok(json)*/
     }
 
     pub fn channel_latest_version(&self, channel: &Id) -> Option<&Version> {
@@ -263,7 +213,8 @@ impl Directory {
             .as_ref()
             .expect("No versions available for the selected channel");
 
-        // At the moment, i have not seen a channel with multiple versions.
+        // At the moment, i have not seen a channel with multiple versions. The
+        // latest version should be first if it is sorted properly anyways.
         let version = &versions[0];
 
         Some(version)

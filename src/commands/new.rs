@@ -86,7 +86,7 @@ fn new_wizard(default_name: Option<String>) -> anyhow::Result<(String, Firmware)
             )
             .interact()?;
 
-        debug!("User selected firmware: {:?}", firmware_type);
+        debug!(firmware_type, "User selected firmware:");
 
         if firmware_type == "custom" {
             debug!("Prompting for custom firmware URL");
