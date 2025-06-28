@@ -2,9 +2,11 @@ use anyhow::{Result, bail};
 use cliclack::confirm;
 use gix::open;
 use tokio::fs;
+use tracing::instrument;
 
 use crate::{git, progress::progress, types::flip::Flip};
 
+#[instrument]
 pub async fn fetch(flip: Flip) -> Result<()> {
     let path = flip.source_path;
 
@@ -38,6 +40,7 @@ pub async fn fetch(flip: Flip) -> Result<()> {
     Ok(())
 }
 
+#[instrument]
 pub async fn clean(flip: Flip) -> Result<()> {
     let path = flip.source_path;
 

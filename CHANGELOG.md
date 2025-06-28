@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Improved logging across the app, better UX and error handling on verbose mode
+  (show stack-trace).
+
 ## 0.4.0
 
 ### BREAKING CHANGES

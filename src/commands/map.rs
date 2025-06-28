@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
-use tracing::{debug, trace};
+use tracing::{debug, instrument, trace};
 
 use crate::types::{flip::Flip, mapping::MappingEntry};
 
+#[instrument]
 pub async fn run(
     mut flip: Flip,
     db_type: String,
@@ -42,6 +43,7 @@ pub async fn run(
     Ok(())
 }
 
+#[instrument]
 fn add_include(mapping: &mut Option<MappingEntry>, path: PathBuf) {
     let path = path.to_string_lossy().to_string();
 
@@ -58,6 +60,7 @@ fn add_include(mapping: &mut Option<MappingEntry>, path: PathBuf) {
     }
 }
 
+#[instrument]
 fn add_exclude(mapping: &mut Option<MappingEntry>, path: PathBuf) {
     let path = format!(":(exclude){}", path.to_string_lossy());
 

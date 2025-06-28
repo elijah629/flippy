@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use clap::{ArgAction, Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tracing::{Level, error};
+use tracing::{Level, error, instrument};
 use types::flip::Flip;
 
 use crate::art::{FLIPPY, get_art};
@@ -167,8 +167,8 @@ async fn main() -> Result<()> {
     init_logging(cli.verbose, cli.json);
 
     if let Err(err) = run(cli).await {
-        error!("{}", get_art());
-        error!("{}", err);
+        println!("{}", get_art());
+        error!("{:?}", err);
 
         std::process::exit(1);
     }
@@ -249,6 +249,7 @@ async fn try_flip_from_path(p: impl AsRef<Path>) -> Result<Flip> {
 }
 
 /// Initialize logging based on verbosity count
+#[instrument]
 fn init_logging(level: u8, json: bool) {
     let level = match level {
         0 => Level::INFO,
@@ -256,6 +257,14 @@ fn init_logging(level: u8, json: bool) {
         2 => Level::TRACE,
         _ => Level::TRACE,
     };
+
+    let trace = level == Level::TRACE;
+
+    if trace {
+        unsafe {
+            std::env::set_var("RUST_LIB_BACKTRACE", "1");
+        }
+    }
 
     if json {
         tracing_subscriber::fmt().json().init();
@@ -272,8 +281,8 @@ fn init_logging(level: u8, json: bool) {
             .with_thread_names(false)
             .without_time()
             .with_target(true)
-            .with_file(level == Level::TRACE)
-            .with_line_number(level == Level::TRACE)
+            .with_file(trace)
+            .with_line_number(trace)
             .init()
     };
 }

@@ -58,6 +58,9 @@ To fix all of the above, and make the Flipper Zero more accessible to everyone.
 ```bash
 # Requires Rust ≥1.87.0
 cargo install flippy
+
+# More performance, but a 2m 30s minute build time on my pc!
+cargo install flippy --profile release-hyper
 ```
 
 ## 🚀 Quickstart

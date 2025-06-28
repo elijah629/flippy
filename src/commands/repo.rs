@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 use url::Url;
 use uuid::Uuid;
 
@@ -8,6 +8,7 @@ use crate::{
     validators::validate_project_name,
 };
 
+#[instrument]
 pub async fn add(mut flip: Flip, url: Url, name: String) -> anyhow::Result<()> {
     debug!("validating url");
     let url = gix::url::parse(url.as_str().into())?;
@@ -46,6 +47,7 @@ pub async fn add(mut flip: Flip, url: Url, name: String) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[instrument]
 pub async fn remove(mut flip: Flip, name: String) -> anyhow::Result<()> {
     match flip.repositories.remove(&name) {
         Some(_) => {

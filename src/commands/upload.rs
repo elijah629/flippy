@@ -14,11 +14,12 @@ use gix::{Commit, open};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use tokio::fs;
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 
 mod diff;
 mod pathspec;
 
+#[instrument]
 pub async fn run(flip: Flip, force_walkdir: bool) -> Result<()> {
     if force_walkdir {
         unimplemented!(
@@ -75,10 +76,10 @@ pub async fn run(flip: Flip, force_walkdir: bool) -> Result<()> {
                 "Ignore the previous message if this your first time running this command on this flipper."
             );
             warn!(
-                "If it is not your first time, please take care in keeping that file and make a backup of it. The sync file holds important information to drastically improve transfer speeds and I/O calls. Over time many I/O calls will wear out your SD card."
+                "If it is not your first time, please take care in keeping that file save and make a backup of it. The sync file holds important information to drastically improve transfer speeds and I/O calls. Over time many I/O calls will wear out your SD card."
             );
 
-            info!("Creating blank sync file, re-run the command to compute a diff");
+            info!("Creating blank sync file, rerun command for walking-diff");
         }
         Err(e) => return Err(e),
     }

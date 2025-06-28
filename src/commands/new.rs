@@ -6,7 +6,7 @@ use anyhow::anyhow;
 use cliclack::{confirm, input, intro, outro, select};
 use std::path::Path;
 use tokio::fs;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
 pub async fn run<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     intro("flippy new")?;
@@ -63,6 +63,7 @@ pub async fn run<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[instrument]
 fn new_wizard(default_name: Option<String>) -> anyhow::Result<(String, Firmware)> {
     debug!("Prompting for project name");
     let mut name = input("Name").validate_interactively(ProjectNameValidator);

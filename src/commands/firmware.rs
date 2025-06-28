@@ -23,9 +23,10 @@ use serde::{
     de::{self, IntoDeserializer, value::StringDeserializer},
 };
 use tar::Archive;
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
+#[instrument]
 pub async fn set(mut flip: Flip, firmware: String) -> anyhow::Result<()> {
     let deserializer: StringDeserializer<de::value::Error> = firmware.into_deserializer();
 
@@ -42,6 +43,7 @@ pub async fn set(mut flip: Flip, firmware: String) -> anyhow::Result<()> {
 /// - Put all of it's files inside of /ext/update/xxx
 /// - Run Update on /ext/update/xxx/update.fuf
 /// - Reboot into update mode
+#[instrument]
 pub async fn update(flip: Flip) -> anyhow::Result<()> {
     let firmware = flip.firmware;
 
