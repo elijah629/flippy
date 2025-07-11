@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- Removed `tracing-error`, unused
+
 ## 0.4.1
 
 - Improved logging across the app, better UX and error handling on verbose mode

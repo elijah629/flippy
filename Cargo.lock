@@ -656,7 +656,7 @@ dependencies = [
 
 [[package]]
 name = "flippy"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -678,7 +678,6 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
- "tracing-error",
  "tracing-subscriber",
  "url",
  "uuid",
@@ -3519,16 +3518,6 @@ checksum = "b9d12581f227e93f094d3af2ae690a574abb8a2b9b7a96e7cfe9647b2b617678"
 dependencies = [
  "once_cell",
  "valuable",
-]
-
-[[package]]
-name = "tracing-error"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b1581020d7a273442f5b45074a6a57d5757ad0a47dac0e9f0bd57b81936f3db"
-dependencies = [
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

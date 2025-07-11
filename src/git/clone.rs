@@ -29,7 +29,6 @@ where
     )?;
 
     let mut prepare = prepare_clone(url, directory)?;
-    //.with_shallow(gix::remote::fetch::Shallow::DepthAtRemote(1.try_into()?));
 
     let (mut checkout, fetch_outcome) =
         prepare.fetch_then_checkout(&mut progress, &gix::interrupt::IS_INTERRUPTED)?;
