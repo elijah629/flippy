@@ -12,7 +12,7 @@ documentation = "https://docs.rs/flippy"
 # Errors & logging
 anyhow = { version = "1.0.98" }
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["json"] }
+tracing-subscriber = { version = "0.3.20", features = ["json"] }
 
 # Cli stuff
 clap = { version = "4.5.39", features = ["derive"] }
