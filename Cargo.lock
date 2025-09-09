@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "flippy"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "clap",
