@@ -22,7 +22,7 @@ cliclack = { version = "0.3.6", default-features = false }
 flipper-rpc = { version = "0.9.3", features = ["fs-createdir", "fs-readdir", "fs-remove", "fs-progress-mpsc", "tracing", "transport-serial-optimized", "transport-serial-optimized-large-stack-limit"] }
 
 # Git (gix)
-gix = { version = "0.72.1", features = [
+gix = { version = "0.73.0", features = [
   "max-performance", # < what it says
   "comfort", # Pretty printing prodash
   "extras",
@@ -30,7 +30,7 @@ gix = { version = "0.72.1", features = [
   ], default-features = false }
 
 ## See [patch.crates-io] below
-prodash = { version = "29.0.2", default-features = false, features = [
+prodash = { version = "30.0.1", default-features = false, features = [
   "progress-tree",
   "local-time",
   "unit-human",
@@ -43,7 +43,7 @@ prodash = { version = "29.0.2", default-features = false, features = [
 
 # Projects
 serde = { version = "1.0.219", features = ["derive"] }
-toml = "0.8.22"
+toml = "0.9.5"
 
 # Repos
 url = { version = "2.5.4", features = ["serde"] }
@@ -64,7 +64,7 @@ hex = "0.4.3"
 
 # Diff trees
 fxhash = "0.2.1"
-hyperloglockless = "0.1.0"
+hyperloglockless = "0.3.1"
 futures-util = "0.3.31"
 
 # Updating
@@ -72,9 +72,9 @@ tar = "0.4.44"
 flate2 = "1.1.2"
 sha2 = "0.10.9"
 
-[patch.crates-io]
+# [patch.crates-io]
 # TODO: Remove when gix fixes prodash version
-prodash = { version = "29.0.2", git = "https://github.com/elijah629/prodash" }
+# prodash = { version = "29.0.2", git = "https://github.com/elijah629/prodash" }
 
 # This is overkill but rust needs to appear BLAZINGLY FAST
 # Compile time with all: ~2m 23s :skull: It goes from a 200+ MB file to 13.8MB though!

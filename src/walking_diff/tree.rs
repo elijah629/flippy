@@ -65,7 +65,7 @@ impl Tree {
     pub fn from_path_and_sizes<P: AsRef<Path> + Sync>(paths: &[(P, u32)]) -> Self {
         // TODO: Tune precision to avoid underestimation (requires reallocation) and have minimal
         // overhead when hashing (kinda expensive to hash everything 4x more)
-        let hll = HyperLogLog::with_hasher(12, FxBuildHasher::new());
+        let mut hll = HyperLogLog::with_hasher(12, FxBuildHasher::new());
 
         let hasher = FxBuildHasher::new();
 
