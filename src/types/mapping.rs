@@ -51,7 +51,7 @@ pub struct MappingInfo<'a> {
 }
 
 impl Mapping<'_> {
-    pub fn info(&self) -> MappingInfo {
+    pub fn info(&self) -> MappingInfo<'_> {
         match self {
             Mapping::SubGHz(patterns) => MappingInfo {
                 patterns,
@@ -90,7 +90,7 @@ impl Mapping<'_> {
 impl Mappings {
     /// Iterate over every `include` and `exclude` path in every defined mapping,
     /// yielding `(true, path)` for includes and `(false, path)` for excludes.
-    pub fn iter(&self) -> impl Iterator<Item = Mapping> {
+    pub fn iter(&self) -> impl Iterator<Item = Mapping<'_>> {
         let ibutton = self.ibutton.iter().map(Mapping::IButton);
         let subghz = self.subghz.iter().map(Mapping::SubGHz);
         let badusb = self.badusb.iter().map(Mapping::BadUSB);
