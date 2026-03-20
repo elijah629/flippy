@@ -68,7 +68,7 @@ hyperloglockless = "0.3.1"
 futures-util = "0.3.31"
 
 # Updating
-tar = "0.4.44"
+tar = "0.4.45"
 flate2 = "1.1.2"
 sha2 = "0.10.9"
 
