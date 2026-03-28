@@ -1,159 +1,113 @@
-# ❌ `qFlipper`, ✅ `flippy`
+# flippy
 
-> Admit it, `qFlipper` sucks.
+`flippy` is a small CLI for keeping a Flipper Zero setup in a project directory.
+It is aimed at people who want a text-based `flip.toml`, repeatable local or remote
+sources, and something that fits cleanly into shell scripts, Git, and Nix-based workflows.
 
-![Crates.io Version](https://img.shields.io/crates/v/flippy)
-![Crates.io License](https://img.shields.io/crates/l/flippy)
-![docs.rs](https://img.shields.io/docsrs/flippy)
-![Crates.io MSRV](https://img.shields.io/crates/msrv/flippy)
-![Crates.io License](https://img.shields.io/crates/l/flippy)
-![Crates.io Downloads (recent)](https://img.shields.io/crates/dr/flippy)
-![GitHub Repo stars](https://img.shields.io/github/stars/elijah629/flippy)
+This repository is still early. The current CLI can:
 
-## What!?
+- create a project directory with `flip.toml` and `store/`
+- set a firmware source in `flip.toml`
+- add repository sources to `flip.toml`
+- validate local sources and write a fetch plan to `store/fetch-plan.txt`
 
-`qFlipper` sucks! What could you mean… It is **the one and only** Flipper
-control software produced by the one and only _Flipper Devices Inc_! How could
-it be bad!!!?!?!
+It does not try to replace the normal Flipper desktop workflow.
 
-### Well…
+## Why Use It Alongside qFlipper
 
-- Proprietary and _barely_ open source as the codebase (pardon my language)
-  FUCKING SUCKS.
-- Overcomplicated codebase.
-- The CLI is bad, barely documented, and not worth automating.
-- It’s not `Rust` (okay, that was a joke, but honestly—who writes a new
-  application in `C++`, `C`, and `Qt` nowadays?).
-- **Slow**: they rolled their own `Protobuf` RPC interface, and they don’t even
-  implement it correctly!!!! Pitiful.
-- Last updated **1 year ago** just to fix Windows builds…
-- The last **real code commit** was **over 2 years ago**!
+qFlipper is still the standard desktop tool for day-to-day device management. It gives
+you a GUI, firmware installation, file browsing, logs, and a direct connection to the
+device.
 
-## Why flippy?
+`flippy` is useful in a different place:
 
-To fix all of the above, and make the Flipper Zero more accessible to everyone.
+- you want the setup described in files that can live in Git
+- you want to point at local build artifacts as well as remote URLs
+- you want a CLI that can be driven from scripts, CI jobs, or Nix shells
+- you want to keep notes about which firmware and content sources belong to a given SD layout
 
-- _READABLE_ open source, **100% Rust**.
-- Ergonomic CLI with first class automation support.
-- Built on top of my robust `flipper-rpc` library.
-- Regularly maintained and tested on Linux (first class citizen here in the
-  penguin empire).
+A practical model is:
 
-## Features
+- use qFlipper for direct device interaction
+- use `flippy` to manage the project-side definition of what should exist
 
-- **Rust reimplementation** of the official Flipper RPC API
-- **Automatic DB management**: keeps track of which files and repos you’ve
-  pulled
-- **Custom firmware channels**: any channel following the `directory.json` spec
-  is supported
-- **Interactive setup**: `flippy new` bootstraps a fresh project for you
-- **Repo mapping** (`flippy map`): include or exclude paths in remote archives
-- **Store management** (`flippy store fetch/clean`): bulk pull or wipe
-  everything in one command.
-- **Firmware control** (`flippy firmware set/update`): pin to or upgrade to any
-  firmware you choose
+## Example
 
-## 🛠️ Installation
+Create a project:
 
 ```bash
-# Requires Rust ≥1.87.0
-cargo install flippy
-
-# More performance, but a 2m 30s minute build time on my pc!
-cargo install flippy --profile release-hyper
+flippy new ./sd
+cd ./sd
 ```
 
-## 🚀 Quickstart
+Set firmware from a local build:
 
-> ![NOTE] You must own a flipper (duh...) and have it plugged in **before**
-> running commands that will modify it.
-
-1. **Initialize** a new project in the current directory:
-
-   ```bash
-   flippy new my-flipper
-   cd my-flipper
-   ```
-
-2. *_Add_ a new repository
-
-   ```bash
-   flippy repo add https://github.com/UberGuidoZ/Flipper flipper
-   ```
-
-3. **Map** entries from a repo to a DB on the flipper
-
-   ```bash
-   flippy map subghz flipper "Sub-GHz/**/*.sub"
-   ```
-
-4. **Fetch** all configured repos into your local store:
-
-   ```bash
-   flippy store fetch
-   ```
-
-5. **Upload** all fetched repos onto the flipper.
-
-   ```bash
-   flippy upload
-   ```
-
-6. **Set** a custom firmware channel:
-
-   ```bash
-   flippy firmware set unleashed@development
-   ```
-
-7. **Update** your Flipper device:
-
-   ```bash
-   flippy firmware update
-   ```
-
-## 📖 CLI Reference
-
-```text
-    _________  __        _________  ________  ________  __  __
-   / _______/ / /       /___  ___/ /   ₀   / /   ₀   / / / / /
-  / /______  / /          / /     / ______/ / ______/ / /_/ /
- / _______/ / /_____  ___/ /___  / /       / / ______ \__, /
-/_/        /_______/ /________/ /_/       /_/ /___________/ vX.Y.Z
-
-Automates upgrades and pulls remote databases, files, and firmware for the
-Flipper Zero
-
-Usage: flippy [OPTIONS] <COMMAND>
-
-Commands:
-  new       Interactive setup for a new flip
-  upload    Upload local changes to remote storage
-  map       Manages mappings in flip.toml files
-  repo      Add or remove repositories
-  firmware  Manages firmware settings
-  store     Manages store files and updates repositories
-  help      Print this message or the help of the given subcommand(s)
-
-Options:
-  -v, --verbose...  Verbosity level (-v, -vv, -vvv)
-  -j, --json        Enables machine-readable JSON output
-  -h, --help        Print help
-  -V, --version     Print version
+```bash
+flippy map firmware set path://../fw.tgz
 ```
 
-_(full details via `flippy <subcommand> --help`)_
+Add a repository from GitHub:
 
-## 📚 Documentation & Support
+```bash
+flippy map repo add https://github.com/Lucaslhm/Flipper-IRDB irdb
+```
 
-- **Docs**: [https://docs.rs/flippy](https://docs.rs/flippy)
-- **Source**: [https://github.com/elijah629/flippy](https://github.com/elijah629/flippy)
-- **License**: MIT
+Add a repository using an SCP-style Git remote:
 
-## 🤝 Contributing
+```bash
+flippy map repo add git@github.com:flipperdevices/flipperzero-firmware.git firmware
+```
 
-Happy to accept issues and PRs!
+Create the store directory and validate the current configuration:
 
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feat/awesome`)
-3. Commit your changes (`git commit -m "Add awesome feature"`)
-4. Push (`git push origin feat/awesome`) and open a PR
+```bash
+flippy store create
+flippy store fetch --optimize
+```
+
+`store fetch` currently validates local paths and writes a fetch plan. It does not yet
+clone repositories or download firmware artifacts.
+
+## `flip.toml`
+
+Example configuration:
+
+```toml
+name = "sd"
+firmware = "path://../fw.tgz"
+
+[repositories.irdb]
+source = "https://github.com/Lucaslhm/Flipper-IRDB"
+
+[repositories.firmware]
+source = "git@github.com:flipperdevices/flipperzero-firmware.git"
+```
+
+Firmware values can be:
+
+- `ofw`
+- `unleashed`
+- `momentum`
+- `rogue-free`
+- `http(s)` URLs
+- `file://` URLs
+- local paths such as `fw.tgz`, `/full/path/fw.tgz`, or `path://../fw.tgz`
+
+Repository values can be:
+
+- `http(s)` URLs
+- `ssh://` URLs
+- `git://` URLs
+- SCP-style Git remotes such as `git@github.com:owner/repo.git`
+- local paths such as `path://../repo`
+
+## Development
+
+Use the pinned toolchain from the flake:
+
+```bash
+nix develop
+cargo fmt -- --check
+cargo test
+cargo clippy -- -D warnings
+```

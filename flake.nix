@@ -1,15 +1,15 @@
 {
-  description = "Nix flake with openssl";
-
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
   outputs =
     {
       nixpkgs,
       flake-utils,
+      rust-overlay,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -17,13 +17,20 @@
       let
         pkgs = import nixpkgs {
           inherit system;
+          overlays = [ (import rust-overlay) ];
         };
+        rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
       in
       {
         devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            pkg-config
-            openssl
+          packages = [
+            pkgs.ripgrep
+            (rustToolchain.override {
+              extensions = [
+                "rust-analyzer"
+                "clippy"
+              ];
+            })
           ];
         };
       }
